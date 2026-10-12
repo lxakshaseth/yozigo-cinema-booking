@@ -16,13 +16,12 @@ Executed 13 October 2026 (Asia/Kolkata) on Windows, Node.js 24.19.0, PostgreSQL 
 | Final `npm test` | **27 passed, 0 failed**, one test file, 12.11 seconds total |
 | `docker compose config --quiet` | Passed |
 | Docker Compose startup | Not executed; Docker Desktop daemon unavailable |
-| Frontend/browser integration | Source integrated and builds pass; full browser flow not yet exercised |
+| Frontend/browser integration | Passed live flow: demo sign-in, movie/show selection, seat map, seat hold, simulated payment success, booking history and cancellation |
 
 ## Full-stack connection (13 October 2026)
 
-The existing React/Figma frontend is now in `web/` in this repository. It calls the existing Express API through Vite's `/api` proxy. Customer registration/login, movie search and details, showtime selection, persisted seat polling, five-minute holds, simulated payment, booking history/cancellation, and admin movie/show/report screens are wired to the API. Session cookies and CSRF tokens are handled by the shared client. These changes were verified with `npm run typecheck:all` and `npm run build:all` (both passed).
+The existing React/Figma frontend is now in `web/` in this repository. It calls the existing Express API through Vite's `/api` proxy. Customer registration/login, movie search and details, showtime selection, persisted seat polling, five-minute holds, simulated payment, booking history/cancellation, and admin movie/show/report screens are wired to the API. Session cookies and CSRF tokens are handled by the shared client. These changes were verified with `npm run typecheck` and `npm run build` (both passed). A live browser run signed in as the seeded demo customer, selected the seeded movie and show, reserved seat A1, completed the simulated success outcome, and verified the booking in history. The test booking was then cancelled, and the UI confirmed that the seat was released. The test used `YOZIGO_WEB_PORT=5174` and `YOZIGO_API_PORT=4001` because the default ports were already occupied.
 
-The database integration suite was attempted again, but the local PostgreSQL process was not reachable from the test runner at `localhost:5434`; `npm run db:migrate:test` could not connect, and Vitest therefore skipped all 27 test cases and failed during setup. The earlier database verification recorded above remains from the prior run; the new frontend/browser flow has not been exercised against a live database or browser in this run.
 
 The first integration run found two 500-vs-409 error mapping defects for PostgreSQL exclusion and RESTRICT failures wrapped by Prisma as unknown request errors. Both were corrected. A subsequent 24-test suite passed; three additional security/rollback checks were then added and the final 27-test suite passed.
 
@@ -30,5 +29,5 @@ Concurrency tests used separate authenticated HTTP clients, a real PostgreSQL lo
 
 Migration: `prisma/migrations/202610120001_initial/migration.sql`. It includes Prisma table/index/foreign-key DDL plus exclusion, CHECK and deferred inventory/hold-cardinality constraints, and the session table.
 
-No failing tests remain. No Git commit was made because this workspace is not a Git repository. PostgreSQL's local development cluster is ignored in `.gitignore`; it is not a deployment artifact. Keep the generated SQL migration and package lock under source control when initializing the repository.
+No failing tests remain. The source repository is the `backend` directory; the generated SQL migration and package lock are tracked, while PostgreSQL's local development cluster is ignored in `.gitignore`.
 

@@ -47,7 +47,7 @@ npm run db:seed
 npm run dev
 ```
 
-Web: `http://localhost:5173`; API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health). `npm run dev` starts both. To start one side, use `npm run dev:web` or `npm run dev:api`.
+Web: `http://localhost:5173`; API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health). `npm run dev` starts both. To start one side, use `npm run dev:web` or `npm run dev:api`. If port 5173 is already in use, set `YOZIGO_WEB_PORT` to another port; the combined dev script aligns the API's allowed origin automatically. If port 4000 is occupied, set `YOZIGO_API_PORT` to another port; the API and Vite proxy will use it together.
 
 `npm run typecheck` and `npm run build` check both apps. The Vite API base defaults to `/api` and can be overridden with `VITE_API_BASE_URL` in `web/.env`.
 
@@ -90,6 +90,8 @@ This alternative trusts local connections, binds only loopback, and is for devel
 | `SESSION_SECRET` | At least 32 characters; use a cryptographically random production secret |
 | `FRONTEND_ORIGIN` | Exact frontend origin, default `http://localhost:5173`; no trailing slash |
 | `PORT` | HTTP port, default 4000 |
+| `YOZIGO_WEB_PORT` | Optional frontend port for the combined local dev runner |
+| `YOZIGO_API_PORT` | Optional API port for the combined local dev runner |
 | `NODE_ENV` | development, test or production |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Optional local seed admin credentials |
 | `CUSTOMER_EMAIL`, `CUSTOMER_PASSWORD` | Optional local seed customer credentials |
