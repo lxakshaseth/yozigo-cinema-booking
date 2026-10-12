@@ -16,11 +16,17 @@ Executed 13 October 2026 (Asia/Kolkata) on Windows, Node.js 24.19.0, PostgreSQL 
 | Final `npm test` | **27 passed, 0 failed**, one test file, 12.11 seconds total |
 | `docker compose config --quiet` | Passed |
 | Docker Compose startup | Not executed; Docker Desktop daemon unavailable |
-| Frontend/browser integration | Passed live flow: demo sign-in, movie/show selection, seat map, seat hold, simulated payment success, booking history and cancellation |
+| Frontend/browser integration before service split | Passed live flow through the original Express API |
 
-## Full-stack connection (13 October 2026)
+## Microservice conversion (13 October 2026)
 
-The existing React/Figma frontend is now in `web/` in this repository. It calls the existing Express API through Vite's `/api` proxy. Customer registration/login, movie search and details, showtime selection, persisted seat polling, five-minute holds, simulated payment, booking history/cancellation, and admin movie/show/report screens are wired to the API. Session cookies and CSRF tokens are handled by the shared client. These changes were verified with `npm run typecheck` and `npm run build` (both passed). A live browser run signed in as the seeded demo customer, selected the seeded movie and show, reserved seat A1, completed the simulated success outcome, and verified the booking in history. The test booking was then cancelled, and the UI confirmed that the seat was released. The test used `YOZIGO_WEB_PORT=5174` and `YOZIGO_API_PORT=4001` because the default ports were already occupied.
+The API now runs as an API gateway, Identity service and Cinema service. Identity owns users and session storage in `yozigo_identity`; Cinema owns movies, shows, seat inventory, holds, payments and bookings in `yozigo_cinema`. The gateway keeps the browser `/api` contract and forwards signed-in identity context with a shared internal token. The independent schemas, migration/seed scripts, local multi-process runner and Docker Compose stack were added. Seat holds and booking/payment transactions remain within Cinema so the existing database locking guarantees stay atomic.
+
+Service implementation checks: `npm run typecheck`, `npm run build`, `docker compose config --quiet`, service schema migration, and service demo seed all passed. The Compose file was parsed but could not be started because the Docker daemon was unavailable.
+
+The optional legacy-data transfer script also passes Node's syntax check. It was not run because this cutover path should only be run deliberately against a backed-up source database with writes stopped.
+
+A live browser journey through the new gateway and services signed in with the seeded demo customer, selected the seeded movie and show, selected seat A1, created a five-minute hold, completed the simulated payment success, and displayed the booking in history. The booking was then cancelled and the UI confirmed the seat was released. This run used `YOZIGO_WEB_PORT=5174`, `YOZIGO_API_PORT=4200`, `YOZIGO_IDENTITY_PORT=4201`, and `YOZIGO_CINEMA_PORT=4202`.
 
 
 The first integration run found two 500-vs-409 error mapping defects for PostgreSQL exclusion and RESTRICT failures wrapped by Prisma as unknown request errors. Both were corrected. A subsequent 24-test suite passed; three additional security/rollback checks were then added and the final 27-test suite passed.

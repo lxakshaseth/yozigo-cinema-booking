@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+node_modules
+web/node_modules
+dist
+web/dist
+.local-postgres
+coverage
+*.log

@@ -1,6 +1,6 @@
 # Yozigo Cinemas
 
-Full-stack single-screen cinema booking application. `src/` is the Express and Prisma API; `web/` is the existing React, TypeScript and Vite customer/admin UI. During development Vite proxies `/api` to Express so cookie sessions and CSRF protection work on the same origin.
+Full-stack single-screen cinema booking application. `web/` is the React, TypeScript and Vite customer/admin UI. The backend runs as three services behind one browser-facing API gateway. In development, Vite proxies `/api` to that gateway so cookie sessions and CSRF protection work on the same origin.
 
 ## Stack and architecture
 
@@ -9,8 +9,11 @@ Node.js 22.12+ (verified on 24.19), strict TypeScript, Express 5, PostgreSQL, Pr
 Official references used: [Prisma 6 data sources](https://docs.prisma.io/docs/orm/v6/prisma-schema/overview/data-sources), [Prisma 6 migrations](https://www.prisma.io/docs/orm/v6/prisma-migrate/getting-started), [Express 5 migration guide](https://expressjs.com/en/guide/migrating-5/).
 
 ```text
-src/app.ts                 Express composition and security headers
-src/server.ts              Listener, session cleanup and graceful shutdown
+src/gateway/server.ts      Browser-facing API gateway and frontend host
+services/identity/server.ts Login, registration, sessions and user records
+services/cinema/server.ts  Catalogue, show scheduling, inventory and bookings
+src/app.ts                 Legacy all-in-one API retained for compatibility
+src/server.ts              Legacy API listener
 src/config.ts              Validated environment
 src/db.ts                  Prisma client and PostgreSQL session pool
 src/controllers/auth.ts    Authentication request handlers
@@ -20,15 +23,18 @@ src/services/shows.ts      Scheduling, atomic inventory, show lifecycle
 src/middleware/            Authentication, authorization, CSRF and errors
 src/validation.ts          Strict request contracts
 src/openapi.ts             OpenAPI 3.0 contract
-prisma/schema.prisma       Relational models
+prisma/schema.prisma       Shared generated Prisma model contract
 prisma/migrations/         Generated DDL plus explicit PostgreSQL constraints
 prisma/seed.ts             Separate demo account/movie/show seed
+prisma/services/            Independent identity and cinema database schemas
+scripts/migrate-services.mjs Creates service databases and applies their schemas
+scripts/seed-services.ts   Seeds demo identity and cinema records
 scripts/migrate-test.ts    Dedicated test database migration guard
 tests/integration.test.ts Real HTTP + PostgreSQL integration tests
 web/src/App.tsx            Customer booking and admin UI
 web/src/api.ts             Typed cookie/CSRF-aware API client
 web/src/connected.css      Responsive styles for connected screens
-scripts/dev.mjs            Starts API and Vite together
+scripts/dev.mjs            Starts gateway, both services and Vite together
 FEATURE_API_CHECKLIST.md   Feature-to-endpoint integration checklist
 ```
 
@@ -41,21 +47,24 @@ Copy-Item .env.example .env
 npm ci
 npm --prefix web ci
 npm run db:generate
-docker compose up -d db
-npm run db:migrate
-npm run db:seed
+npm run db:migrate:services
+npm run db:seed:services
 npm run dev
 ```
 
-Web: `http://localhost:5173`; API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health). `npm run dev` starts both. To start one side, use `npm run dev:web` or `npm run dev:api`. If port 5173 is already in use, set `YOZIGO_WEB_PORT` to another port; the combined dev script aligns the API's allowed origin automatically. If port 4000 is occupied, set `YOZIGO_API_PORT` to another port; the API and Vite proxy will use it together.
+Web: `http://localhost:5173`; gateway/API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health). `npm run dev` starts gateway, identity, cinema and Vite. To start services individually, use `npm run dev:gateway`, `npm run dev:identity`, `npm run dev:cinema`, or `npm run dev:web`. Set `YOZIGO_WEB_PORT`, `YOZIGO_API_PORT`, `YOZIGO_IDENTITY_PORT` or `YOZIGO_CINEMA_PORT` to choose local ports; the combined runner configures the Vite proxy and frontend origin to match.
 
-`npm run typecheck` and `npm run build` check both apps. The Vite API base defaults to `/api` and can be overridden with `VITE_API_BASE_URL` in `web/.env`.
+`npm run typecheck` and `npm run build` check both apps and all services. The Vite API base defaults to `/api` and can be overridden with `VITE_API_BASE_URL` in `web/.env`.
 
-Compose publishes PostgreSQL on **127.0.0.1:5434** and creates `yozigo` plus `yozigo_test` on its first initialization. If reusing an existing Compose volume without a test database:
+Docker Compose starts PostgreSQL, a one-shot schema migration job, identity, cinema, gateway and Nginx frontend. Only PostgreSQL, gateway and frontend ports are published to loopback; service ports remain internal. PostgreSQL is published on **127.0.0.1:5434**. The migration job creates `yozigo_identity` and `yozigo_cinema`; after the stack is healthy, seed demo records from the host with `npm run db:seed:services`.
+
+Compose also creates `yozigo` and `yozigo_test` on first initialization for legacy development and the existing integration-test suite. If reusing an existing volume without a test database:
 
 ```powershell
 docker compose exec db createdb -U yozigo yozigo_test
 ```
+
+When upgrading from the previous all-in-one database, first apply the service schemas, stop writes to the old app for cutover, then run `npm run db:migrate:services:data` before `npm run db:seed:services`. The data command copies users and active sessions to Identity and cinema records to Cinema, preserving IDs where possible and remapping account IDs by email when an identity already exists. The source `DATABASE_URL` must point to the existing monolith database. Keep a database backup before cutover; the old database remains unchanged.
 
 Demo accounts (local development only):
 
@@ -75,8 +84,8 @@ initdb -D .local-postgres -U yozigo -A trust --encoding=UTF8 --locale=C
 pg_ctl -D .local-postgres -l postgres.log -o '-h 127.0.0.1 -p 5434' start
 createdb -h 127.0.0.1 -p 5434 -U yozigo yozigo
 createdb -h 127.0.0.1 -p 5434 -U yozigo yozigo_test
-npm run db:migrate
-npm run db:seed
+npm run db:migrate:services
+npm run db:seed:services
 ```
 
 This alternative trusts local connections, binds only loopback, and is for development only. Stop it with `pg_ctl -D .local-postgres stop` before starting Compose on the same port. Never use this cluster or trust authentication in production.
@@ -85,13 +94,18 @@ This alternative trusts local connections, binds only loopback, and is for devel
 
 | Variable | Meaning |
 |---|---|
-| `DATABASE_URL` | PostgreSQL application/session database URL |
+| `DATABASE_URL` | Existing monolith/source database and base URL for local service database defaults |
 | `TEST_DATABASE_URL` | Separate disposable database; its name must end in `_test` |
+| `IDENTITY_DATABASE_URL` | Identity service database; defaults to `yozigo_identity` derived from `DATABASE_URL` |
+| `CINEMA_DATABASE_URL` | Cinema service database; defaults to `yozigo_cinema` derived from `DATABASE_URL` |
 | `SESSION_SECRET` | At least 32 characters; use a cryptographically random production secret |
+| `INTERNAL_SERVICE_TOKEN` | Shared secret authenticating gateway-to-service calls; production rejects the local default |
 | `FRONTEND_ORIGIN` | Exact frontend origin, default `http://localhost:5173`; no trailing slash |
 | `PORT` | HTTP port, default 4000 |
-| `YOZIGO_WEB_PORT` | Optional frontend port for the combined local dev runner |
-| `YOZIGO_API_PORT` | Optional API port for the combined local dev runner |
+| `YOZIGO_WEB_PORT` | Optional frontend port for the combined local dev runner / Compose |
+| `YOZIGO_API_PORT` | Optional gateway port for the combined local dev runner / Compose |
+| `YOZIGO_IDENTITY_PORT`, `YOZIGO_CINEMA_PORT` | Optional local ports for the internal services |
+| `YOZIGO_COMPOSE_ORIGIN` | Browser origin allowed by Compose services; match the published frontend address |
 | `NODE_ENV` | development, test or production |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Optional local seed admin credentials |
 | `CUSTOMER_EMAIL`, `CUSTOMER_PASSWORD` | Optional local seed customer credentials |
@@ -141,9 +155,16 @@ Money is integer INR paise (25000 means INR 250). Timestamps are ISO strings wit
 
 Errors use `{ "error": { "code": "SEAT_CONFLICT", "message": "...", "details": { "seatIds": ["..."] } } }`. Details are optional. Validation returns 400, unauthenticated access 401, role/CSRF denial 403, missing or inaccessible holds/bookings 404, and lifecycle/scheduling/uniqueness conflicts 409. A simulated FAILURE returns 200 with `outcome: FAILURE` and no booking; an expired attempt returns 409. Exact-set hold retries return the original hold without extending expiry. Duplicate successful payments return the existing logical booking and do not add another payment attempt. After cancellation, that retry returns the original CANCELLED booking; a new purchase needs a new hold.
 
-## Database and transaction design
+## Service boundaries and database design
 
-- `User` has normalized unique email; password hashes never appear in responses. Users own holds, bookings and payment attempts. Registration cannot assign a role.
+- **Identity service** owns users, password hashes, roles and PostgreSQL-backed sessions in `yozigo_identity`. It handles registration, login, logout, session lookup and internal user lookup.
+- **Cinema service** owns movies, shows, seat inventory, holds, simulated payment attempts and bookings in `yozigo_cinema`. It receives a validated user ID and role from the gateway; it stores those IDs without cross-service foreign keys.
+- **API gateway** is the only public backend entry point. It validates identity sessions, enforces browser CSRF/origin checks, forwards trusted identity context over an internal-token-protected network, and combines user names into admin booking reports. Gateway-to-service ports should not be exposed publicly.
+- Seat holds, inventory and simulated payment stay in one service/database so locks and booking creation remain atomic. The gateway preserves existing `/api` paths so the frontend contract does not change.
+
+## Cinema transaction design
+
+- Identity `User` records have normalized unique email; password hashes never appear in responses. Cinema holds, bookings and payment attempts store the identity user ID without a cross-database foreign key. Registration cannot assign a role.
 - `Movie` has many `Show` rows. Shows snapshot runtime and compute end time at creation. Editing movie runtime leaves existing shows unchanged.
 - `Show` owns exactly 80 `ShowSeat` records: rows A–H, seat numbers 1–10, unique `(showId, rowLabel, seatNumber)`. A deferred constraint trigger checks 80 seats at transaction commit. Creation inserts show and inventory atomically.
 - PostgreSQL GiST exclusion constraint `Show_no_overlap` uses `tstzrange(startsAt, endsAt, '[)')`. All shows share one screen. Exact back-to-back schedules are valid. Service validation gives early feedback and database enforcement closes the concurrent-create race. SQLSTATE 23P01 maps to 409, including Prisma's unknown-request error wrapper.
@@ -152,7 +173,7 @@ Errors use `{ "error": { "code": "SEAT_CONFLICT", "message": "...", "details": {
 - `Booking.holdId` is unique. `BookingSeat` preserves individual seat-price snapshots. `(bookingId, showSeatId)` is unique, but **showSeatId alone is not unique**, allowing rebooking after cancellation without destroying history.
 - `PaymentAttempt` records user, hold, SUCCESS/FAILURE and database timestamp. Payment attempts never store financial credentials.
 - Relations use `ON DELETE RESTRICT`. A referenced movie cannot be deleted. Show deletion explicitly removes its empty inventory inside a transaction, but **any hold history or booking history blocks deletion**, including expired holds and cancelled bookings. This intentionally stricter policy preserves audit history. Updating a show is blocked after it starts or when active holds or any booking history exist.
-- Indexes support movie title, movie/start lookup, hold expiry, current hold/booking lookup, ownership, booking date, show/status and payment history. `session` is maintained by connect-pg-simple with an expiry index; the server periodically removes expired session rows.
+- Indexes support movie title, movie/start lookup, hold expiry, current hold/booking lookup, ownership, booking date, show/status and payment history. Identity sessions are maintained by connect-pg-simple with an expiry index; the identity service periodically removes expired session rows.
 
 ### Locking and hold lifecycle
 
@@ -183,9 +204,9 @@ Observed verification details are recorded in `VERIFICATION.md`.
 
 ## Deployment and remaining work
 
-Run `npm ci`, `npm run db:generate`, `npm run build`, then `npm run db:migrate` before `npm start`. The migration contains PostgreSQL-specific rules: do not replace it with `prisma db push`, which would omit the custom SQL. Keep database connections private, use TLS where required, restrict database roles, configure HTTPS and backups, and provision a non-demo administrator with an Argon2id hash through a trusted administration process. The app does not log bodies, passwords, session IDs or secrets. Unexpected errors log the error type only.
+Run `npm ci`, `npm run db:generate`, `npm run build`, then `npm run db:migrate:services` before starting `start:identity`, `start:cinema` and `start:gateway`. Docker Compose runs this layout. The service schemas contain PostgreSQL-specific rules; do not replace them with `prisma db push`, which would omit custom SQL. Keep service ports and database connections private, configure HTTPS and backups, and provision a non-demo administrator with an Argon2id hash through a trusted administration process. The app does not log bodies, passwords, session IDs or secrets. Unexpected errors log the error type only.
 
 Completed: schema/migration, sessions/auth, catalogue, seat holds/expiry, fake payments, idempotent confirmation, booking privacy/history/cancellation, admin CRUD/reporting, OpenAPI and real concurrency tests.
 
-Limits: one screen; per-show operations serialize across 80 seats; in-memory per-process rate limits; no password reset/email verification; no real payments/refunds. Docker Compose uses PostgreSQL 17, while the original database verification used installed PostgreSQL 18.6; Compose startup itself was not tested because Docker Desktop was stopped. Verify the Compose path and production reverse proxy/cookie configuration in the target environment.
+Limits: one screen; per-show operations serialize across 80 seats; in-memory per-process rate limits; no password reset/email verification; no real payments/refunds. Production scaling needs shared rate limiting and managed secrets. Validate deployment-specific ingress and cookie configuration in the target environment.
 

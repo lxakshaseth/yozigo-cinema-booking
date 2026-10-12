@@ -2,17 +2,112 @@ services:
   db:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: yozigo
-      POSTGRES_PASSWORD: yozigo_local
+      POSTGRES_USER: ${POSTGRES_USER:-yozigo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yozigo_local}
       POSTGRES_DB: yozigo
     ports: ["127.0.0.1:5434:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U yozigo -d yozigo"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yozigo} -d yozigo"]
       interval: 3s
       timeout: 3s
       retries: 20
+
+  migrate:
+    build:
+      context: .
+      target: backend
+    command: ["npm", "run", "db:migrate:services"]
+    environment:
+      IDENTITY_DATABASE_URL: postgresql://${POSTGRES_USER:-yozigo}:${POSTGRES_PASSWORD:-yozigo_local}@db:5432/yozigo_identity
+      CINEMA_DATABASE_URL: postgresql://${POSTGRES_USER:-yozigo}:${POSTGRES_PASSWORD:-yozigo_local}@db:5432/yozigo_cinema
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  identity:
+    build:
+      context: .
+      target: backend
+    command: ["npm", "run", "start:identity"]
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: "4101"
+      SERVICE_BIND_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yozigo}:${POSTGRES_PASSWORD:-yozigo_local}@db:5432/yozigo_identity
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
+      FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4101/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  cinema:
+    build:
+      context: .
+      target: backend
+    command: ["npm", "run", "start:cinema"]
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: "4102"
+      SERVICE_BIND_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yozigo}:${POSTGRES_PASSWORD:-yozigo_local}@db:5432/yozigo_cinema
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
+      FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+      YOZIGO_CINEMA_SERVICE: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4102/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    build:
+      context: .
+      target: backend
+    command: ["npm", "run", "start:gateway"]
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: "4000"
+      GATEWAY_BIND_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yozigo}:${POSTGRES_PASSWORD:-yozigo_local}@db:5432/yozigo_identity
+      SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
+      FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+      IDENTITY_SERVICE_URL: http://identity:4101
+      CINEMA_SERVICE_URL: http://cinema:4102
+    ports: ["127.0.0.1:${YOZIGO_API_PORT:-4000}:4000"]
+    depends_on:
+      identity:
+        condition: service_healthy
+      cinema:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+    ports: ["127.0.0.1:${YOZIGO_WEB_PORT:-5173}:80"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+
 volumes:
   pgdata:

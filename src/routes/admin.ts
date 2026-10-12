@@ -26,5 +26,10 @@ adminRouter.get('/shows/:id/summary', async (req, res) => res.json(await withInv
 adminRouter.get('/shows/:id/bookings', async (req, res) => {
   const showId = idSchema.parse(req.params.id); const { page, limit } = pageSchema.parse(req.query);
   await showDetail(showId);
-  res.json({ items: await db.booking.findMany({ where: { showId }, include: { ...bookingInclude, user: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }), page, limit });
+  const where = { showId };
+  const paging = { orderBy: { createdAt: 'desc' as const }, skip: (page - 1) * limit, take: limit };
+  const items = process.env.YOZIGO_CINEMA_SERVICE === '1'
+    ? await db.booking.findMany({ where, include: bookingInclude, ...paging })
+    : await db.booking.findMany({ where, include: { ...bookingInclude, user: { select: { name: true } } }, ...paging });
+  res.json({ items, page, limit });
 });
