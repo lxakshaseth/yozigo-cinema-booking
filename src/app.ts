@@ -1,0 +1,36 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+import rateLimit from 'express-rate-limit';
+import swaggerUi from 'swagger-ui-express';
+import { config } from './config.js';
+import { db, sessionPool } from './db.js';
+import { csrf, loadUser } from './middleware/auth.js';
+import { errorHandler } from './middleware/errors.js';
+import { authRouter } from './routes/auth.js';
+import { apiRouter } from './routes/api.js';
+import { adminRouter } from './routes/admin.js';
+import { openapi } from './openapi.js';
+export function createApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  if (config.NODE_ENV === 'production') app.set('trust proxy', 1);
+  app.use(helmet());
+  app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+  app.use(express.json({ limit: '16kb' }));
+  app.use(rateLimit({ windowMs: 60000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Too many requests' } } }));
+  const Store = connectPgSimple(session);
+  app.use(session({ name: 'yozigo.sid', store: new Store({ pool: sessionPool, tableName: 'session', createTableIfMissing: false, pruneSessionInterval: false }), secret: config.SESSION_SECRET, resave: false, saveUninitialized: false, cookie: { httpOnly: true, sameSite: 'lax', secure: config.NODE_ENV === 'production', maxAge: 86400000 } }));
+  app.get('/api/health', async (_req, res) => { await db.$queryRaw`SELECT 1`; res.json({ status: 'ok' }); });
+  app.get('/api/openapi.json', (_req, res) => res.json(openapi));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapi));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }, loadUser, csrf);
+  app.use('/api/auth', authRouter);
+  app.use('/api/admin', adminRouter);
+  app.use('/api', apiRouter);
+  app.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } }));
+  app.use(errorHandler);
+  return app;
+}

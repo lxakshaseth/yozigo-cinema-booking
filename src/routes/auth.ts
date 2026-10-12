@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { authenticated } from '../middleware/auth.js';
+import { getCsrf, register, login, logout, me } from '../controllers/auth.js';
+export const authRouter = Router();
+const limit = rateLimit({ windowMs: 15 * 60000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Too many authentication attempts' } } });
+authRouter.get('/csrf', getCsrf);
+authRouter.post('/register', limit, register);
+authRouter.post('/login', limit, login);
+authRouter.post('/logout', authenticated, logout);
+authRouter.get('/me', authenticated, me);

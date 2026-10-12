@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+enum Rating {
+  U
+  UA
+  A
+}
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+}
+enum HoldStatus {
+  ACTIVE
+  CONFIRMED
+  EXPIRED
+  RELEASED
+}
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+}
+enum PaymentOutcome {
+  SUCCESS
+  FAILURE
+}
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  email String @unique
+  passwordHash String
+  role Role @default(CUSTOMER)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  holds SeatHold[]
+  bookings Booking[]
+  payments PaymentAttempt[]
+}
+model Movie {
+  id String @id @default(uuid()) @db.Uuid
+  title String
+  posterUrl String?
+  language String
+  durationMinutes Int
+  rating Rating
+  description String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  shows Show[]
+  @@index([title])
+}
+model Show {
+  id String @id @default(uuid()) @db.Uuid
+  movieId String @db.Uuid
+  movie Movie @relation(fields:[movieId], references:[id], onDelete:Restrict)
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt DateTime @db.Timestamptz(3)
+  durationMinutes Int
+  ticketPricePaise Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  seats ShowSeat[]
+  holds SeatHold[]
+  bookings Booking[]
+  @@index([movieId, startsAt])
+}
+model ShowSeat {
+  id String @id @default(uuid()) @db.Uuid
+  showId String @db.Uuid
+  show Show @relation(fields:[showId], references:[id], onDelete:Restrict)
+  rowLabel String
+  seatNumber Int
+  status SeatStatus @default(AVAILABLE)
+  currentHoldId String? @db.Uuid
+  currentHold SeatHold? @relation(fields:[currentHoldId], references:[id], onDelete:Restrict)
+  currentBookingId String? @db.Uuid
+  currentBooking Booking? @relation(fields:[currentBookingId], references:[id], onDelete:Restrict)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  history BookingSeat[]
+  holdHistory HoldSeat[]
+  @@unique([showId, rowLabel, seatNumber])
+  @@index([currentHoldId])
+  @@index([currentBookingId])
+}
+model SeatHold {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  showId String @db.Uuid
+  show Show @relation(fields:[showId], references:[id], onDelete:Restrict)
+  expiresAt DateTime @db.Timestamptz(3)
+  status HoldStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  seats ShowSeat[]
+  items HoldSeat[]
+  booking Booking?
+  payments PaymentAttempt[]
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@index([showId])
+}
+model HoldSeat {
+  holdId String @db.Uuid
+  hold SeatHold @relation(fields:[holdId], references:[id], onDelete:Restrict)
+  showSeatId String @db.Uuid
+  showSeat ShowSeat @relation(fields:[showSeatId], references:[id], onDelete:Restrict)
+  @@id([holdId, showSeatId])
+  @@index([showSeatId])
+}
+model Booking {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  showId String @db.Uuid
+  show Show @relation(fields:[showId], references:[id], onDelete:Restrict)
+  holdId String @unique @db.Uuid
+  hold SeatHold @relation(fields:[holdId], references:[id], onDelete:Restrict)
+  totalAmountPaise Int
+  status BookingStatus @default(CONFIRMED)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  seats BookingSeat[]
+  currentSeats ShowSeat[]
+  @@index([userId, createdAt])
+  @@index([showId, status])
+}
+model BookingSeat {
+  id String @id @default(uuid()) @db.Uuid
+  bookingId String @db.Uuid
+  booking Booking @relation(fields:[bookingId], references:[id], onDelete:Restrict)
+  showSeatId String @db.Uuid
+  showSeat ShowSeat @relation(fields:[showSeatId], references:[id], onDelete:Restrict)
+  seatPricePaise Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([bookingId, showSeatId])
+  @@index([showSeatId])
+}
+model PaymentAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  holdId String @db.Uuid
+  hold SeatHold @relation(fields:[holdId], references:[id], onDelete:Restrict)
+  userId String @db.Uuid
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  outcome PaymentOutcome
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([holdId])
+  @@index([userId])
+}
