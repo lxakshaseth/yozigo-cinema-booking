@@ -16,7 +16,13 @@ Executed 13 October 2026 (Asia/Kolkata) on Windows, Node.js 24.19.0, PostgreSQL 
 | Final `npm test` | **27 passed, 0 failed**, one test file, 12.11 seconds total |
 | `docker compose config --quiet` | Passed |
 | Docker Compose startup | Not executed; Docker Desktop daemon unavailable |
-| Frontend/browser integration | Not executed; no frontend files supplied |
+| Frontend/browser integration | Source integrated and builds pass; full browser flow not yet exercised |
+
+## Full-stack connection (13 October 2026)
+
+The existing React/Figma frontend is now in `web/` in this repository. It calls the existing Express API through Vite's `/api` proxy. Customer registration/login, movie search and details, showtime selection, persisted seat polling, five-minute holds, simulated payment, booking history/cancellation, and admin movie/show/report screens are wired to the API. Session cookies and CSRF tokens are handled by the shared client. These changes were verified with `npm run typecheck:all` and `npm run build:all` (both passed).
+
+The database integration suite was attempted again, but the local PostgreSQL process was not reachable from the test runner at `localhost:5434`; `npm run db:migrate:test` could not connect, and Vitest therefore skipped all 27 test cases and failed during setup. The earlier database verification recorded above remains from the prior run; the new frontend/browser flow has not been exercised against a live database or browser in this run.
 
 The first integration run found two 500-vs-409 error mapping defects for PostgreSQL exclusion and RESTRICT failures wrapped by Prisma as unknown request errors. Both were corrected. A subsequent 24-test suite passed; three additional security/rollback checks were then added and the final 27-test suite passed.
 

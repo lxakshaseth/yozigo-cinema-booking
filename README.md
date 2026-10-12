@@ -1,10 +1,10 @@
-# Yozigo Cinemas backend
+# Yozigo Cinemas
 
-A working single-screen cinema REST API, built entirely in `backend/`. The original workspace was empty; no frontend or design files were modified.
+Full-stack single-screen cinema booking application. `src/` is the Express and Prisma API; `web/` is the existing React, TypeScript and Vite customer/admin UI. During development Vite proxies `/api` to Express so cookie sessions and CSRF protection work on the same origin.
 
 ## Stack and architecture
 
-Node.js 22.12+ (verified on 24.19), strict TypeScript, Express 5, PostgreSQL, Prisma **6.19.0**, Zod 4, Argon2id, PostgreSQL-backed cookie sessions, Vitest and Supertest. `package-lock.json` records resolved dependencies. Prisma 6 deliberately uses `prisma-client-js` and `url = env("DATABASE_URL")` inside `schema.prisma`; do not copy Prisma 7 configuration into this project.
+Node.js 22.12+ (verified on 24.19), strict TypeScript, Express 5, PostgreSQL, Prisma **6.19.0**, Zod 4, Argon2id, PostgreSQL-backed cookie sessions, React 19, Vite 8, Vitest and Supertest. The API and frontend each have an npm lockfile. Prisma 6 deliberately uses `prisma-client-js` and `url = env("DATABASE_URL")` inside `schema.prisma`; do not copy Prisma 7 configuration into this project.
 
 Official references used: [Prisma 6 data sources](https://docs.prisma.io/docs/orm/v6/prisma-schema/overview/data-sources), [Prisma 6 migrations](https://www.prisma.io/docs/orm/v6/prisma-migrate/getting-started), [Express 5 migration guide](https://expressjs.com/en/guide/migrating-5/).
 
@@ -25,15 +25,21 @@ prisma/migrations/         Generated DDL plus explicit PostgreSQL constraints
 prisma/seed.ts             Separate demo account/movie/show seed
 scripts/migrate-test.ts    Dedicated test database migration guard
 tests/integration.test.ts Real HTTP + PostgreSQL integration tests
+web/src/App.tsx            Customer booking and admin UI
+web/src/api.ts             Typed cookie/CSRF-aware API client
+web/src/connected.css      Responsive styles for connected screens
+scripts/dev.mjs            Starts API and Vite together
+FEATURE_API_CHECKLIST.md   Feature-to-endpoint integration checklist
 ```
 
 ## Start locally
 
-Run the following in `backend/` (PowerShell shown). Docker Desktop must be running for Compose.
+Run the following in this repository root (PowerShell shown). Docker Desktop must be running for Compose.
 
 ```powershell
 Copy-Item .env.example .env
 npm ci
+npm --prefix web ci
 npm run db:generate
 docker compose up -d db
 npm run db:migrate
@@ -41,7 +47,9 @@ npm run db:seed
 npm run dev
 ```
 
-API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health).
+Web: `http://localhost:5173`; API: `http://localhost:4000/api`; [Swagger UI](http://localhost:4000/api/docs); [OpenAPI JSON](http://localhost:4000/api/openapi.json); [health](http://localhost:4000/api/health). `npm run dev` starts both. To start one side, use `npm run dev:web` or `npm run dev:api`.
+
+`npm run typecheck` and `npm run build` check both apps. The Vite API base defaults to `/api` and can be overridden with `VITE_API_BASE_URL` in `web/.env`.
 
 Compose publishes PostgreSQL on **127.0.0.1:5434** and creates `yozigo` plus `yozigo_test` on its first initialization. If reusing an existing Compose volume without a test database:
 
@@ -169,7 +177,7 @@ npm test
 
 Tests use the real Express app, independent cookie agents, real Argon2 hashing and real PostgreSQL transactions. Critical hold and duplicate-payment races use a database barrier: a separate connection holds an inventory lock until PostgreSQL reports both requests waiting. Assertions verify one winner/409 loser, matching ownership, no partial claims and no duplicate booking. No mocked Prisma methods or fixed race sleeps. A trigger-injected payment failure verifies transaction rollback. The expected 500 log in that test is deliberate.
 
-Observed verification details are recorded in `VERIFICATION.md`. Schema and migration files are ready for source control; the provided workspace was not a Git repository, so no Git commit was created.
+Observed verification details are recorded in `VERIFICATION.md`.
 
 ## Deployment and remaining work
 
@@ -177,5 +185,5 @@ Run `npm ci`, `npm run db:generate`, `npm run build`, then `npm run db:migrate` 
 
 Completed: schema/migration, sessions/auth, catalogue, seat holds/expiry, fake payments, idempotent confirmation, booking privacy/history/cancellation, admin CRUD/reporting, OpenAPI and real concurrency tests.
 
-Limits: one screen; per-show operations serialize across 80 seats; in-memory per-process rate limits; no password reset/email verification; no real payments/refunds; no frontend files were supplied. Docker Compose uses PostgreSQL 17, while executed database verification used installed PostgreSQL 18.6; Compose startup itself was not tested because Docker Desktop was stopped. Verify the Compose path and production reverse proxy/cookie configuration in the target environment. Connect the finished frontend to the contracts above and test the complete browser booking flow.
+Limits: one screen; per-show operations serialize across 80 seats; in-memory per-process rate limits; no password reset/email verification; no real payments/refunds. Docker Compose uses PostgreSQL 17, while the original database verification used installed PostgreSQL 18.6; Compose startup itself was not tested because Docker Desktop was stopped. Verify the Compose path and production reverse proxy/cookie configuration in the target environment.
 
