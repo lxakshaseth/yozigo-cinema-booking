@@ -1,0 +1,10 @@
+{
+  "description": "Book movie tickets effortlessly with a modern interface offering seat selection, showtimes, and booking management for customers and cinema staff.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
