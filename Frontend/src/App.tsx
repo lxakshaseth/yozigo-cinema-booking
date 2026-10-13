@@ -1,8 +1,24 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 type DemoUser = { name: string; email: string; password: string };
+type DemoSession = Pick<DemoUser, "name" | "email">;
 const demoAccounts = new Map<string, DemoUser>();
-let signedInUser: DemoUser | null = null;
+const demoSessionKey = "yozigo.demo.session";
+function readDemoSession(): DemoSession | null {
+  try {
+    const value: unknown = JSON.parse(window.sessionStorage.getItem(demoSessionKey) || "null");
+    if (typeof value === "object" && value !== null && "name" in value && "email" in value && typeof value.name === "string" && typeof value.email === "string") return { name: value.name, email: value.email };
+  } catch { /* Ignore unavailable or invalid demo session data. */ }
+  return null;
+}
+let signedInUser: DemoSession | null = readDemoSession();
+function setDemoSession(user: DemoUser | null) {
+  signedInUser = user ? { name: user.name, email: user.email } : null;
+  try {
+    if (signedInUser) window.sessionStorage.setItem(demoSessionKey, JSON.stringify(signedInUser));
+    else window.sessionStorage.removeItem(demoSessionKey);
+  } catch { /* The in-memory demo session still works when storage is unavailable. */ }
+}
 const authChanged = () => window.dispatchEvent(new Event("yozigo-auth-change"));
 
 type IconName =
@@ -304,7 +320,7 @@ const demoMovies = [
 
 function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (page: CustomerPage) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [user, setUser] = useState<DemoUser | null>(signedInUser);
+  const [user, setUser] = useState<DemoSession | null>(signedInUser);
   useEffect(() => {
     const update = () => setUser(signedInUser);
     window.addEventListener("yozigo-auth-change", update);
@@ -326,7 +342,7 @@ function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (pag
             <span className="public-user">{user?.name || "Guest"}<small>Customer</small></span>
             <Icon name="chevron-down" size={15} />
           </button>
-          {menuOpen && <div className="profile-dropdown" role="menu"><div><strong>{user?.name || "Guest"}</strong><span>{user?.email || "Not signed in"}</span></div><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate("bookings"); }}><Icon name="ticket" size={15} />My Bookings</button><button role="menuitem" type="button" onClick={() => { signedInUser = null; authChanged(); setMenuOpen(false); navigate("login"); }}><Icon name="arrow-left" size={15} />Sign Out</button></div>}
+          {menuOpen && <div className="profile-dropdown" role="menu"><div><strong>{user?.name || "Guest"}</strong><span>{user?.email || "Not signed in"}</span></div><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate("bookings"); }}><Icon name="ticket" size={15} />My Bookings</button><button role="menuitem" type="button" onClick={() => { setDemoSession(null); authChanged(); setMenuOpen(false); navigate("login"); }}><Icon name="arrow-left" size={15} />Sign Out</button></div>}
         </div>
       </div>
     </header>
@@ -392,9 +408,9 @@ function AuthScreen({ mode, navigate }: { mode: "signup" | "login"; navigate: (p
       if (signup) {
         const account = { name: name.trim(), email: normalizedEmail, password };
         demoAccounts.set(normalizedEmail, account);
-        signedInUser = account;
+        setDemoSession(account);
       } else {
-        signedInUser = existing!;
+        setDemoSession(existing!);
       }
       authChanged();
       navigate("home");
