@@ -16,7 +16,7 @@ export const admin: RequestHandler = (req, _res, next) => { if (!req.user) retur
 export const csrf: RequestHandler = (req, _res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.get('origin');
-  if (origin && origin !== config.FRONTEND_ORIGIN) return fail(403, 'CSRF_REJECTED', 'Origin is not allowed');
+  if (origin && !config.FRONTEND_ORIGINS.includes(origin)) return fail(403, 'CSRF_REJECTED', 'Origin is not allowed');
   const token = req.get('x-csrf-token');
   const expected = req.session.csrfToken;
   if (!token || !expected || Buffer.byteLength(token) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(token), Buffer.from(expected))) return fail(403, 'CSRF_REJECTED', 'A valid CSRF token is required');

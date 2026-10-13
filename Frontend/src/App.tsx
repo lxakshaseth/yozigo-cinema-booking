@@ -1,25 +1,21 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { api, dateLabel, errorMessage, getCsrf, inr, type ApiBooking, type ApiMovie, type ApiSeat, type ApiShow, type ApiUser } from "./api";
 
-type DemoUser = { name: string; email: string; password: string };
-type DemoSession = Pick<DemoUser, "name" | "email">;
-const demoAccounts = new Map<string, DemoUser>();
-const demoSessionKey = "yozigo.demo.session";
-function readDemoSession(): DemoSession | null {
-  try {
-    const value: unknown = JSON.parse(window.sessionStorage.getItem(demoSessionKey) || "null");
-    if (typeof value === "object" && value !== null && "name" in value && "email" in value && typeof value.name === "string" && typeof value.email === "string") return { name: value.name, email: value.email };
-  } catch { /* Ignore unavailable or invalid demo session data. */ }
-  return null;
-}
-let signedInUser: DemoSession | null = readDemoSession();
-function setDemoSession(user: DemoUser | null) {
-  signedInUser = user ? { name: user.name, email: user.email } : null;
-  try {
-    if (signedInUser) window.sessionStorage.setItem(demoSessionKey, JSON.stringify(signedInUser));
-    else window.sessionStorage.removeItem(demoSessionKey);
-  } catch { /* The in-memory demo session still works when storage is unavailable. */ }
-}
+type DemoSession = Pick<ApiUser, "id" | "name" | "email" | "role">;
+let signedInUser: DemoSession | null = null;
+function setSession(user: DemoSession | null) { signedInUser = user; }
 const authChanged = () => window.dispatchEvent(new Event("yozigo-auth-change"));
+
+type MovieView = ApiMovie & { runtime: string; genre: string; image: string; synopsis: string; cast: string; director: string };
+type ShowSelection = { id: string; movieTitle: string; date: string; time: string; startsAt: string; price: number; seats: number; totalSeats: number };
+const movieArt: Record<string, string> = {
+  "Beyond the Horizon": "https://images.unsplash.com/photo-1622914232194-7747242349ab?auto=format&fit=crop&w=1400&q=84",
+};
+function movieView(movie: ApiMovie): MovieView {
+  const hours = Math.floor(movie.durationMinutes / 60);
+  const minutes = movie.durationMinutes % 60;
+  return { ...movie, runtime: `${hours}h ${String(minutes).padStart(2, "0")}m`, genre: "Now showing", image: movie.posterUrl || movieArt[movie.title] || "", synopsis: movie.description || "Movie details will be updated by the cinema team.", cast: "", director: "" };
+}
 
 type IconName =
   | "arrow-left"
@@ -287,13 +283,6 @@ type CustomerPage =
   | "unauthorized";
 type ListingState = "ready" | "loading" | "error";
 
-type ShowSelection = {
-  date: string;
-  time: string;
-  price: number;
-  seats: number;
-};
-
 const formatINR = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -308,15 +297,6 @@ const movieImages = {
   summit: "https://images.unsplash.com/photo-1558578194-d41aaa387624?auto=format&fit=crop&w=900&q=82",
   ember: "https://images.unsplash.com/photo-1775240158468-06faa67b7286?auto=format&fit=crop&w=900&q=82",
 };
-
-const demoMovies = [
-  { id: 1, title: "The Last Horizon", rating: "UA", language: "English", runtime: "2h 18m", genre: "Sci-Fi · Drama", image: movieImages.horizon, synopsis: "A signal from beyond the mapped world sends a gifted pilot and her estranged father on one final journey across the stars.", cast: "Mira Sen · Arjun Rao · Dev Patel", director: "Anika Bose" },
-  { id: 2, title: "A Quiet Distance", rating: "U", language: "English", runtime: "1h 54m", genre: "Drama", image: movieImages.silence, synopsis: "When two siblings return to their childhood home, a long-buried family secret changes how they remember everything.", cast: "Leah Martin · Noah Reed · Isha Kapoor", director: "Elliot Hayes" },
-  { id: 3, title: "Wild Meridian", rating: "UA", language: "Hindi", runtime: "2h 06m", genre: "Adventure", image: movieImages.wild, synopsis: "A young cartographer follows a forgotten trail through the desert to find a village missing from every map.", cast: "Kabir Mehta · Sana Qureshi · Rohan Das", director: "Naina Verma" },
-  { id: 4, title: "Above the Silence", rating: "U", language: "English", runtime: "1h 48m", genre: "Documentary", image: movieImages.summit, synopsis: "A small research team records the changing soundscape of a mountain community over four seasons.", cast: "Narrated by Anya Bose · The Alpine Field Team", director: "Theo Grant" },
-  { id: 5, title: "Ember Valley", rating: "A", language: "Tamil", runtime: "2h 12m", genre: "Thriller", image: movieImages.ember, synopsis: "After a power outage traps a town in darkness, a journalist uncovers the truth behind a decades-old fire.", cast: "Kavya Raj · Vikram Selvan · Meera Nair", director: "S. Karthik" },
-  { id: 6, title: "Paper Moons", rating: "U", language: "English", runtime: "1h 42m", genre: "Romance", image: "", synopsis: "Two strangers leave anonymous notes in a second-hand bookshop and slowly find their way into each other’s lives.", cast: "Amelia Hart · Lucas Chen · Priya Shah", director: "June Ellis" },
-];
 
 function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (page: CustomerPage) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -342,7 +322,7 @@ function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (pag
             <span className="public-user">{user?.name || "Guest"}<small>Customer</small></span>
             <Icon name="chevron-down" size={15} />
           </button>
-          {menuOpen && <div className="profile-dropdown" role="menu"><div><strong>{user?.name || "Guest"}</strong><span>{user?.email || "Not signed in"}</span></div><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate("bookings"); }}><Icon name="ticket" size={15} />My Bookings</button><button role="menuitem" type="button" onClick={() => { setDemoSession(null); authChanged(); setMenuOpen(false); navigate("login"); }}><Icon name="arrow-left" size={15} />Sign Out</button></div>}
+          {menuOpen && <div className="profile-dropdown" role="menu"><div><strong>{user?.name || "Guest"}</strong><span>{user?.email || "Not signed in"}</span></div><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate("bookings"); }}><Icon name="ticket" size={15} />My Bookings</button><button role="menuitem" type="button" onClick={async () => { try { await api.post<void>("/auth/logout"); } finally { setSession(null); authChanged(); setMenuOpen(false); navigate("login"); } }}><Icon name="arrow-left" size={15} />Sign Out</button></div>}
         </div>
       </div>
     </header>
@@ -388,33 +368,25 @@ function AuthScreen({ mode, navigate }: { mode: "signup" | "login"; navigate: (p
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState("");
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true);
     setServerError("");
     if ((signup && name.trim().length < 2) || !email.includes("@") || password.length < 8) return;
     const normalizedEmail = email.trim().toLowerCase();
-    const existing = demoAccounts.get(normalizedEmail);
-    if (signup && existing) {
-      setServerError("An account with this email already exists. Sign in instead.");
-      return;
-    }
-    if (!signup && (!existing || existing.password !== password)) {
-      setServerError("The email or password you entered is incorrect.");
-      return;
-    }
     setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      if (signup) {
-        const account = { name: name.trim(), email: normalizedEmail, password };
-        demoAccounts.set(normalizedEmail, account);
-        setDemoSession(account);
-      } else {
-        setDemoSession(existing!);
-      }
+    try {
+      await getCsrf();
+      if (signup) await api.post<ApiUser>("/auth/register", { name: name.trim(), email: normalizedEmail, password });
+      const result = await api.post<{ user: ApiUser; csrfToken: string }>("/auth/login", { email: normalizedEmail, password });
+      api.setCsrf(result.csrfToken);
+      setSession(result.user);
       authChanged();
-      navigate("home");
-    }, 700);
+      navigate(!signup && result.user.role === "ADMIN" ? "admin-dashboard" : "home");
+    } catch (error) {
+      setServerError(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -462,7 +434,7 @@ function AuthScreen({ mode, navigate }: { mode: "signup" | "login"; navigate: (p
   );
 }
 
-function MovieDiscoveryCard({ movie, navigate, selectMovie }: { movie: typeof demoMovies[number]; navigate: (page: CustomerPage) => void; selectMovie: (movie: typeof demoMovies[number]) => void }) {
+function MovieDiscoveryCard({ movie, navigate, selectMovie }: { movie: MovieView; navigate: (page: CustomerPage) => void; selectMovie: (movie: MovieView) => void }) {
   const openMovie = () => { selectMovie(movie); navigate("details"); };
   return (
     <article className="discovery-card">
@@ -494,44 +466,60 @@ function ListingFeedback({ state, retry }: { state: "loading" | "error"; retry: 
   );
 }
 
-function HomeScreen({ navigate, selectMovie }: { navigate: (page: CustomerPage) => void; selectMovie: (movie: typeof demoMovies[number]) => void }) {
+function HomeScreen({ navigate, selectMovie }: { navigate: (page: CustomerPage) => void; selectMovie: (movie: MovieView) => void }) {
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("All languages");
   const [rating, setRating] = useState("All ratings");
-  const [listingState, setListingState] = useState<ListingState>("ready");
-  const movies = demoMovies.filter((movie) =>
+  const [listingState, setListingState] = useState<ListingState>("loading");
+  const [movies, setMovies] = useState<MovieView[]>([]);
+  const [loadError, setLoadError] = useState("");
+  const loadMovies = async () => {
+    setListingState("loading");
+    setLoadError("");
+    try {
+      const response = await api.get<{ items: ApiMovie[] }>("/movies?limit=100");
+      setMovies(response.items.map(movieView));
+      setListingState("ready");
+    } catch (error) {
+      setLoadError(errorMessage(error));
+      setListingState("error");
+    }
+  };
+  useEffect(() => { void loadMovies(); }, []);
+  const filteredMovies = movies.filter((movie) =>
     movie.title.toLowerCase().includes(query.toLowerCase()) &&
     (language === "All languages" || movie.language === language) &&
     (rating === "All ratings" || movie.rating === rating),
   );
 
   const previewState = (state: ListingState) => {
-    setListingState(state);
-    if (state === "loading") window.setTimeout(() => setListingState("ready"), 1100);
+    if (state === "loading") void loadMovies();
+    else { setLoadError("Movie list preview error"); setListingState(state); }
   };
+  const featuredMovie = movies[0];
 
   return (
     <div className="customer-app">
       <CustomerHeader page="home" navigate={navigate} />
       <main className="customer-main">
-        <div className="demo-banner"><span>DEMONSTRATION DATA</span> Movie titles, schedules and availability are for prototype use only.<div><button onClick={() => previewState("loading")} type="button">Preview loading</button><button onClick={() => previewState("error")} type="button">Preview error</button></div></div>
-        <section className="featured-movie">
-          <img src={movieImages.horizon} alt="Rocky landscape used as a demonstration backdrop for The Last Horizon" />
+        {loadError && <div className="booking-notice notice-error"><Icon name="x" size={16} /><span>{loadError}</span><button type="button" onClick={() => void loadMovies()}>Retry</button></div>}
+        {featuredMovie && <section className="featured-movie">
+          {featuredMovie.image && <img src={featuredMovie.image} alt={`${featuredMovie.title} poster`} />}
           <div className="featured-overlay" />
           <div className="featured-content">
             <Badge tone="violet">Featured premiere</Badge>
-            <h1>The Last Horizon</h1>
-            <div className="featured-meta"><span className="feature-rating">UA</span><span>English</span><i /><span>2h 18m</span><i /><span>Sci-Fi · Drama</span></div>
-            <p>A signal from beyond the mapped world sends a gifted pilot and her estranged father on one final journey.</p>
-            <Button onClick={() => { selectMovie(demoMovies[0]); navigate("details"); }}>View Details <Icon name="chevron-right" size={15} /></Button>
+            <h1>{featuredMovie.title}</h1>
+            <div className="featured-meta"><span className="feature-rating">{featuredMovie.rating}</span><span>{featuredMovie.language}</span><i /><span>{featuredMovie.runtime}</span></div>
+            <p>{featuredMovie.synopsis}</p>
+            <Button onClick={() => { selectMovie(featuredMovie); navigate("details"); }}>View Details <Icon name="chevron-right" size={15} /></Button>
           </div>
           <span className="photo-credit">Photo: Jahmanz Williams / Unsplash</span>
-        </section>
+        </section>}
 
         <section className="movie-listing">
           <div className="listing-heading">
             <div><span className="eyebrow">NOW SHOWING</span><h2>Find your next story</h2><p>Fresh releases and audience favourites, all on our single premium screen.</p></div>
-            <span>{movies.length} movies</span>
+            <span>{filteredMovies.length} movies</span>
           </div>
           <div className="movie-filters">
             <label className="movie-search"><Icon name="search" size={18} /><input value={query} onChange={(event) => { setQuery(event.target.value); setListingState("ready"); }} placeholder="Search by movie title" /></label>
@@ -539,8 +527,8 @@ function HomeScreen({ navigate, selectMovie }: { navigate: (page: CustomerPage) 
             <label><span>Rating</span><select value={rating} onChange={(event) => setRating(event.target.value)}><option>All ratings</option><option>U</option><option>UA</option><option>A</option></select><Icon name="chevron-down" size={15} /></label>
           </div>
 
-          {listingState !== "ready" ? <ListingFeedback state={listingState} retry={() => setListingState("ready")} /> : movies.length ? (
-            <div className="discovery-grid">{movies.map((movie) => <MovieDiscoveryCard key={movie.id} movie={movie} navigate={navigate} selectMovie={selectMovie} />)}</div>
+          {listingState !== "ready" ? listingState === "error" ? <div className="listing-empty error-listing"><span><Icon name="film" /></span><h2>We couldn’t load movies</h2><p>{loadError}</p><Button onClick={() => void loadMovies()}>Try again</Button></div> : <ListingFeedback state="loading" retry={() => void loadMovies()} /> : filteredMovies.length ? (
+            <div className="discovery-grid">{filteredMovies.map((movie) => <MovieDiscoveryCard key={movie.id} movie={movie} navigate={navigate} selectMovie={selectMovie} />)}</div>
           ) : (
             <div className="listing-empty"><span><Icon name="search" /></span><h2>No movies found</h2><p>Try another title or clear your filters to see everything now showing.</p><Button variant="outline" onClick={() => { setQuery(""); setLanguage("All languages"); setRating("All ratings"); }}>Clear filters</Button></div>
           )}
@@ -550,98 +538,110 @@ function HomeScreen({ navigate, selectMovie }: { navigate: (page: CustomerPage) 
   );
 }
 
-const showDates = [
-  { date: "Today", detail: "Sat, 24 May", shows: [{ time: "6:30 PM", price: 250, seats: 42 }, { time: "9:15 PM", price: 300, seats: 67 }] },
-  { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "3:45 PM", price: 220, seats: 58 }, { time: "7:00 PM", price: 250, seats: 76 }] },
-  { date: "Monday", detail: "26 May", shows: [{ time: "6:30 PM", price: 220, seats: 80 }] },
-];
-
-const movieSchedules: Record<number, typeof showDates> = {
-  1: showDates,
-  2: [
-    { date: "Today", detail: "Sat, 24 May", shows: [{ time: "4:15 PM", price: 220, seats: 31 }, { time: "8:45 PM", price: 280, seats: 54 }] },
-    { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "1:30 PM", price: 200, seats: 63 }, { time: "6:00 PM", price: 240, seats: 47 }] },
-    { date: "Monday", detail: "26 May", shows: [{ time: "5:20 PM", price: 220, seats: 72 }] },
-  ],
-  3: [
-    { date: "Today", detail: "Sat, 24 May", shows: [{ time: "12:45 PM", price: 180, seats: 18 }, { time: "7:30 PM", price: 260, seats: 39 }] },
-    { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "3:00 PM", price: 220, seats: 51 }, { time: "9:00 PM", price: 280, seats: 66 }] },
-    { date: "Monday", detail: "26 May", shows: [{ time: "6:15 PM", price: 240, seats: 28 }] },
-  ],
-  4: [
-    { date: "Today", detail: "Sat, 24 May", shows: [{ time: "11:00 AM", price: 150, seats: 60 }, { time: "5:00 PM", price: 180, seats: 43 }] },
-    { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "2:15 PM", price: 160, seats: 74 }] },
-    { date: "Monday", detail: "26 May", shows: [{ time: "4:30 PM", price: 170, seats: 57 }] },
-  ],
-  5: [
-    { date: "Today", detail: "Sat, 24 May", shows: [{ time: "6:00 PM", price: 300, seats: 12 }, { time: "10:00 PM", price: 320, seats: 24 }] },
-    { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "4:00 PM", price: 280, seats: 36 }, { time: "8:30 PM", price: 320, seats: 19 }] },
-    { date: "Monday", detail: "26 May", shows: [{ time: "7:15 PM", price: 300, seats: 45 }] },
-  ],
-  6: [
-    { date: "Today", detail: "Sat, 24 May", shows: [{ time: "2:00 PM", price: 200, seats: 68 }, { time: "7:45 PM", price: 240, seats: 52 }] },
-    { date: "Tomorrow", detail: "Sun, 25 May", shows: [{ time: "12:00 PM", price: 180, seats: 77 }, { time: "5:45 PM", price: 220, seats: 61 }] },
-    { date: "Monday", detail: "26 May", shows: [{ time: "3:30 PM", price: 200, seats: 70 }] },
-  ],
-};
-
-function DetailsScreen({ navigate, selectShow, movie, saved, toggleSaved }: { navigate: (page: CustomerPage) => void; selectShow: (show: ShowSelection) => void; movie: typeof demoMovies[number]; saved: boolean; toggleSaved: () => void }) {
-  const schedule = movieSchedules[movie.id] ?? showDates;
+function DetailsScreen({ navigate, selectMovie, selectShow, movie, saved, toggleSaved }: { navigate: (page: CustomerPage) => void; selectMovie: (movie: MovieView) => void; selectShow: (show: ShowSelection) => void; movie: MovieView; saved: boolean; toggleSaved: () => void }) {
+  const [carouselMovies, setCarouselMovies] = useState<MovieView[]>([]);
+  const [carouselPaused, setCarouselPaused] = useState(false);
+  const [carouselHovered, setCarouselHovered] = useState(false);
+  const [carouselFocused, setCarouselFocused] = useState(false);
+  const [schedule, setSchedule] = useState<Array<{ date: string; detail: string; shows: Array<{ api: ApiShow; time: string; price: number; seats: number }> }>>([]);
   const [selectedDate, setSelectedDate] = useState(0);
-  const [noShows, setNoShows] = useState(false);
-  const [selectedTime, setSelectedTime] = useState(schedule[0].shows[0].time);
+  const [selectedTime, setSelectedTime] = useState("");
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    setSelectedDate(0);
-    setNoShows(false);
-    setSelectedTime(schedule[0].shows[0].time);
-    selectShow({ date: schedule[0].detail, ...schedule[0].shows[0] });
+    let active = true;
+    void api.get<{ items: ApiMovie[] }>("/movies?limit=100").then(({ items }) => {
+      if (active) setCarouselMovies(items.map(movieView));
+    }).catch(() => {
+      if (active) setCarouselMovies([movie]);
+    });
+    return () => { active = false; };
+  }, []);
+  const slides = carouselMovies.length ? carouselMovies : [movie];
+  const activeIndex = Math.max(0, slides.findIndex((item) => item.id === movie.id));
+  const changeSlide = (offset: number) => {
+    if (slides.length < 2) return;
+    selectMovie(slides[(activeIndex + offset + slides.length) % slides.length]!);
+  };
+  useEffect(() => {
+    if (slides.length < 2 || carouselPaused || carouselHovered || carouselFocused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      const currentIndex = slides.findIndex((item) => item.id === movie.id);
+      selectMovie(slides[(currentIndex + 1) % slides.length]!);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [slides, movie.id, carouselPaused, carouselHovered, carouselFocused, selectMovie]);
+  useEffect(() => {
+    let active = true;
+    setSchedule([]);
+    setLoadError("");
+    void api.get<{ items: ApiShow[] }>(`/movies/${movie.id}/shows?limit=100`).then(({ items }) => {
+      if (!active) return;
+      const grouped = new Map<string, Array<{ api: ApiShow; time: string; price: number; seats: number }>>();
+      for (const apiShow of items) {
+        const day = dateLabel(apiShow.startsAt, { weekday: "long", year: "numeric", month: "short", day: "numeric" });
+        const entry = { api: apiShow, time: dateLabel(apiShow.startsAt, { hour: "numeric", minute: "2-digit" }), price: apiShow.ticketPricePaise / 100, seats: apiShow.remainingSeats };
+        grouped.set(day, [...(grouped.get(day) || []), entry]);
+      }
+      const days = [...grouped.entries()].map(([detail, shows]) => ({ date: detail.split(",")[0], detail, shows }));
+      setSchedule(days);
+      if (days[0]?.shows[0]) {
+        setSelectedDate(0);
+        setSelectedTime(days[0].shows[0].api.id);
+        selectShow({ id: days[0].shows[0].api.id, movieTitle: movie.title, date: days[0].detail, time: days[0].shows[0].time, startsAt: days[0].shows[0].api.startsAt, price: days[0].shows[0].price, seats: days[0].shows[0].seats, totalSeats: days[0].shows[0].api.totalSeats });
+      }
+    }).catch((error) => { if (active) setLoadError(errorMessage(error)); });
+    return () => { active = false; };
   }, [movie.id]);
-  const chooseShow = (show: typeof showDates[number]["shows"][number]) => {
-    setSelectedTime(show.time);
-    selectShow({ date: schedule[selectedDate].detail, ...show });
+  const chooseShow = (show: { api: ApiShow; time: string; price: number; seats: number }, date = schedule[selectedDate]?.detail || "") => {
+    setSelectedTime(show.api.id);
+    selectShow({ id: show.api.id, movieTitle: movie.title, date, time: show.time, startsAt: show.api.startsAt, price: show.price, seats: show.seats, totalSeats: show.api.totalSeats });
   };
-  const continueWithShow = (show: typeof showDates[number]["shows"][number]) => {
-    chooseShow(show);
-    navigate("seats");
-  };
+  const continueWithShow = (show: { api: ApiShow; time: string; price: number; seats: number }) => { chooseShow(show); navigate("seats"); };
   return (
     <div className="customer-app">
       <CustomerHeader page="details" navigate={navigate} />
       <main className="customer-main detail-main">
         <button className="back-link" type="button" onClick={() => navigate("home")}><Icon name="arrow-left" size={16} /> Back to movies</button>
-        <section className="detail-hero">
-          {movie.image && <img className="detail-backdrop" src={movie.image} alt="" />}
+      <section className="detail-hero" role="region" aria-roledescription="carousel" aria-label="Now showing movies" onMouseEnter={() => setCarouselHovered(true)} onMouseLeave={() => setCarouselHovered(false)} onFocusCapture={() => setCarouselFocused(true)} onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCarouselFocused(false); }}>
+          {movie.image && <img key={movie.id} className="detail-backdrop" src={movie.image} alt="" />}
           <div className="detail-backdrop-overlay" />
-          <div className="detail-content">
-            <div className={`detail-poster ${!movie.image ? "poster-missing" : ""}`}>{movie.image ? <img src={movie.image} alt={`${movie.title} poster`} /> : <div><Icon name="image" size={28} /><span>Poster coming soon</span></div>}<span>DEMO MOVIE</span></div>
+          <div className="detail-content" key={movie.id} role="group" aria-roledescription="slide" aria-label={`${activeIndex + 1} of ${slides.length}: ${movie.title}`}>
+            <div className={`detail-poster ${!movie.image ? "poster-missing" : ""}`}>{movie.image ? <img src={movie.image} alt={`${movie.title} poster`} /> : <div><Icon name="image" size={28} /><span>Poster coming soon</span></div>}<span>{movie.rating}</span></div>
             <div className="detail-copy">
               <span className="eyebrow">NOW SHOWING</span>
               <h1>{movie.title}</h1>
-              <div className="detail-meta"><span className="feature-rating">{movie.rating}</span><span>{movie.language}</span><i /><span>{movie.runtime}</span><i /><span>{movie.genre}</span></div>
+              <div className="detail-meta"><span className="feature-rating">{movie.rating}</span><span>{movie.language}</span><i /><span>{movie.runtime}</span></div>
               <p>{movie.synopsis}</p>
-              <div className="detail-note"><Icon name="film" size={17} /><span>Directed by {movie.director}</span></div>
-              <div className="detail-note"><Icon name="users" size={17} /><span>Cast: {movie.cast}</span></div>
               <Button variant="outline" onClick={toggleSaved}>{saved ? "✓ Added to Watchlist" : "+ Add to Watchlist"}</Button>
             </div>
           </div>
+          {slides.length > 1 && <div className="detail-carousel-controls">
+            <button className="detail-carousel-arrow" type="button" aria-label="Previous movie" onClick={() => changeSlide(-1)}><Icon name="chevron-left" size={16} /></button>
+            <span className="detail-carousel-count" aria-live="off">{activeIndex + 1} / {slides.length}</span>
+            <div className="detail-carousel-dots" role="group" aria-label="Choose a movie">
+              {slides.map((slide, index) => <button key={slide.id} type="button" aria-label={`Show ${slide.title}`} aria-current={index === activeIndex ? "true" : undefined} onClick={() => selectMovie(slide)} />)}
+            </div>
+            <button className="detail-carousel-toggle" type="button" aria-label={carouselPaused ? "Resume automatic slides" : "Pause automatic slides"} onClick={() => setCarouselPaused((paused) => !paused)}>{carouselPaused ? "▶" : "Ⅱ"}</button>
+            <button className="detail-carousel-arrow" type="button" aria-label="Next movie" onClick={() => changeSlide(1)}><Icon name="chevron-right" size={16} /></button>
+          </div>}
         </section>
         <section className="showtime-section">
-          <div className="showtime-heading"><div><span className="eyebrow">UPCOMING SHOWS</span><h2>Choose a showtime</h2><p>Only future sessions from the cinema schedule are shown.</p></div><div className="showtime-heading-actions"><button type="button" onClick={() => setNoShows(!noShows)}>{noShows ? "Restore shows" : "Preview no shows"}</button><div className="screen-label"><span>SCREEN</span><strong>1</strong></div></div></div>
+          <div className="showtime-heading"><div><span className="eyebrow">UPCOMING SHOWS</span><h2>Choose a showtime</h2><p>Only future sessions from the cinema schedule are shown.</p></div><div className="showtime-heading-actions"><div className="screen-label"><span>SCREEN</span><strong>1</strong></div></div></div>
           <div className="date-tabs">
-            {schedule.map((day, index) => <button className={selectedDate === index ? "active" : ""} onClick={() => { setSelectedDate(index); setSelectedTime(day.shows[0].time); selectShow({ date: day.detail, ...day.shows[0] }); }} type="button" key={day.detail}><span>{day.date}</span><strong>{day.detail}</strong></button>)}
+            {schedule.map((day, index) => <button className={selectedDate === index ? "active" : ""} onClick={() => { setSelectedDate(index); if (day.shows[0]) chooseShow(day.shows[0], day.detail); }} type="button" key={day.detail}><span>{day.date}</span><strong>{day.detail}</strong></button>)}
           </div>
-          {noShows ? <div className="listing-empty no-shows-state"><span><Icon name="calendar" /></span><h2>No upcoming shows</h2><p>The cinema service has not scheduled another session for this movie yet.</p><Button variant="outline" onClick={() => navigate("home")}>Browse Other Movies</Button></div> : <div className="show-list">
-            <div className="show-date-title"><Icon name="calendar" size={17} /><strong>{schedule[selectedDate].date}, {schedule[selectedDate].detail}</strong><span>{schedule[selectedDate].shows.length} shows</span></div>
-            {schedule[selectedDate].shows.map((show) => (
-              <article className={`show-row ${selectedTime === show.time ? "selected-show-row" : ""}`} key={show.time}>
-                <button className={`time-button ${selectedTime === show.time ? "selected" : ""}`} type="button" aria-pressed={selectedTime === show.time} onClick={() => chooseShow(show)}><Icon name={selectedTime === show.time ? "check" : "clock"} size={15} /><span>{show.time}</span></button>
+          {loadError ? <div className="listing-empty error-listing"><h2>Couldn’t load showtimes</h2><p>{loadError}</p><Button variant="outline" onClick={() => navigate("home")}>Back to movies</Button></div> : !schedule.length ? <div className="listing-empty no-shows-state"><span><Icon name="calendar" /></span><h2>No upcoming shows</h2><p>The cinema has not scheduled another session for this movie yet.</p><Button variant="outline" onClick={() => navigate("home")}>Browse Other Movies</Button></div> : <div className="show-list">
+            <div className="show-date-title"><Icon name="calendar" size={17} /><strong>{schedule[selectedDate]?.date}, {schedule[selectedDate]?.detail}</strong><span>{schedule[selectedDate]?.shows.length} shows</span></div>
+            {schedule[selectedDate]?.shows.map((show) => (
+              <article className={`show-row ${selectedTime === show.api.id ? "selected-show-row" : ""}`} key={show.api.id}>
+                <button className={`time-button ${selectedTime === show.api.id ? "selected" : ""}`} type="button" aria-pressed={selectedTime === show.api.id} onClick={() => chooseShow(show)}><Icon name={selectedTime === show.api.id ? "check" : "clock"} size={15} /><span>{show.time}</span></button>
                 <div className="show-price"><span>Ticket price</span><strong>{formatINR(show.price)}</strong></div>
-                <div className="availability"><div><span>Seats remaining</span><strong>{show.seats} <small>/ 80</small></strong></div><span className="availability-bar"><i style={{ width: `${(show.seats / 80) * 100}%` }} /></span></div>
-                <Button onClick={() => continueWithShow(show)}>{selectedTime === show.time ? "Select Seats" : "Choose Show"} <Icon name="chevron-right" size={14} /></Button>
+                <div className="availability"><div><span>Seats remaining</span><strong>{show.seats} <small>/ {show.api.totalSeats}</small></strong></div><span className="availability-bar"><i style={{ width: `${(show.seats / show.api.totalSeats) * 100}%` }} /></span></div>
+                <Button disabled={!show.seats} onClick={() => continueWithShow(show)}>{selectedTime === show.api.id ? "Select Seats" : "Choose Show"} <Icon name="chevron-right" size={14} /></Button>
               </article>
             ))}
           </div>}
-          <div className="schedule-note"><Icon name="check" size={14} /> Show availability comes directly from the cinema schedule. Sessions that have started are automatically hidden.</div>
+          <div className="schedule-note"><Icon name="check" size={14} /> Show availability and ticket prices are loaded from the cinema database.</div>
         </section>
       </main>
     </div>
@@ -650,21 +650,10 @@ function DetailsScreen({ navigate, selectShow, movie, saved, toggleSaved }: { na
 
 type SeatStatus = "available" | "selected" | "held-other" | "held-you" | "booked" | "expired";
 
-const unavailableSeats: Record<string, SeatStatus> = {
-  A3: "booked", A4: "booked", A8: "held-other",
-  B1: "booked", B7: "held-other", B8: "held-other",
-  C2: "booked", C9: "booked",
-  D3: "held-other", D8: "booked",
-  E1: "booked", E10: "booked",
-  F4: "booked", F5: "booked", F6: "booked",
-  G2: "held-other", G9: "booked",
-  H1: "held-you", H5: "booked", H6: "booked", H10: "expired",
-};
-
 function BookingFacts({ show }: { show: ShowSelection }) {
   return (
     <div className="booking-facts">
-      <div><Icon name="film" size={16} /><span>Movie<strong>The Last Horizon</strong></span></div>
+      <div><Icon name="film" size={16} /><span>Movie<strong>{show.movieTitle}</strong></span></div>
       <div><Icon name="calendar" size={16} /><span>Date<strong>{show.date}</strong></span></div>
       <div><Icon name="clock" size={16} /><span>Showtime<strong>{show.time} · Screen 1</strong></span></div>
       <div><Icon name="ticket" size={16} /><span>Ticket price<strong>{formatINR(show.price)} each</strong></span></div>
@@ -761,43 +750,58 @@ function SeatSelectionScreen({
   selectedSeats,
   setSelectedSeats,
   show,
+  onHoldCreated,
 }: {
   navigate: (page: CustomerPage) => void;
   selectedSeats: string[];
   setSelectedSeats: (seats: string[]) => void;
   show: ShowSelection;
+  onHoldCreated: (hold: { id: string; expiresAt: string }) => void;
 }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [seatMap, setSeatMap] = useState<ApiSeat[]>([]);
+  const [mapError, setMapError] = useState("");
   const rows = "ABCDEFGH".split("");
+  const refreshSeats = async () => {
+    try {
+      const response = await api.get<{ seats: ApiSeat[] }>(`/shows/${show.id}/seats`);
+      setSeatMap(response.seats);
+      setMapError("");
+    } catch (error) { setMapError(errorMessage(error)); }
+  };
+  useEffect(() => {
+    void refreshSeats();
+    const timer = window.setInterval(() => void refreshSeats(), 8000);
+    return () => window.clearInterval(timer);
+  }, [show.id]);
 
-  const selectSeat = (id: string) => {
+  const selectSeat = (label: string) => {
     setMessage("");
-    if (id === "D6" && !conflicts.includes(id)) {
-      setConflicts([...conflicts, id]);
-      setSelectedSeats(selectedSeats.filter((seat) => seat !== id));
-      setMessage("D6 was just held by another customer. Please choose a different seat.");
-      return;
-    }
-    if (selectedSeats.includes(id)) {
-      setSelectedSeats(selectedSeats.filter((seat) => seat !== id));
+    if (selectedSeats.includes(label)) {
+      setSelectedSeats(selectedSeats.filter((seat) => seat !== label));
       return;
     }
     if (selectedSeats.length === 6) {
       setMessage("You can select a maximum of 6 seats per booking.");
       return;
     }
-    setSelectedSeats([...selectedSeats, id]);
+    setSelectedSeats([...selectedSeats, label]);
   };
 
-  const continueToHold = () => {
+  const continueToHold = async () => {
     setLoading(true);
     setMessage("");
-    window.setTimeout(() => {
-      setLoading(false);
+    try {
+      const ids = selectedSeats.map((label) => seatMap.find((seat) => `${seat.rowLabel}${seat.seatNumber}` === label)?.id);
+      if (ids.some((id) => !id)) throw new Error("Refresh the seat map and select available seats again.");
+      const hold = await api.post<{ id: string; expiresAt: string }>(`/shows/${show.id}/holds`, { seatIds: ids });
+      onHoldCreated(hold);
       navigate("checkout");
-    }, 750);
+    } catch (error) {
+      setMessage(errorMessage(error));
+      void refreshSeats();
+    } finally { setLoading(false); }
   };
 
   return (
@@ -806,8 +810,8 @@ function SeatSelectionScreen({
       <main className="customer-main seat-page seat-selection-page">
         <button className="back-link" type="button" onClick={() => navigate("details")}><Icon name="arrow-left" size={16} /> Back to showtimes</button>
         <div className="seat-page-heading">
-          <div><span className="eyebrow">THE LAST HORIZON · SCREEN 1</span><h1>Select your seats</h1><p>{show.date} · {show.time} · {formatINR(show.price)} per ticket</p></div>
-          <Badge tone="green">{show.seats} of 80 available</Badge>
+          <div><span className="eyebrow">{show.movieTitle.toUpperCase()} · SCREEN 1</span><h1>Select your seats</h1><p>{show.date} · {show.time} · {formatINR(show.price)} per ticket</p></div>
+          <Badge tone="green">{seatMap.filter((seat) => seat.status === "AVAILABLE").length} of {show.totalSeats} available</Badge>
         </div>
         <div className="seat-booking-layout">
           <section className="full-seat-map">
@@ -820,19 +824,16 @@ function SeatSelectionScreen({
                   {Array.from({ length: 10 }, (_, index) => {
                     const number = index + 1;
                     const id = `${row}${number}`;
-                    const status: SeatStatus = conflicts.includes(id)
-                      ? "held-other"
-                      : selectedSeats.includes(id)
-                        ? "selected"
-                        : unavailableSeats[id] || "available";
-                    return <SeatButton id={id} key={id} number={number} status={status} onSelect={() => selectSeat(id)} />;
+                    const data = seatMap.find((seat) => seat.rowLabel === row && seat.seatNumber === number);
+                    const status: SeatStatus = selectedSeats.includes(id) ? "selected" : data?.status === "BOOKED" ? "booked" : data?.status === "HELD_BY_OTHER" ? "held-other" : data?.status === "HELD_BY_ME" ? "held-you" : "available";
+                    return <SeatButton id={id} key={id} number={number} status={status} onSelect={data?.status === "AVAILABLE" ? () => selectSeat(id) : undefined} />;
                   })}
                 </div>
               ))}
             </div>
             <div className="aisle-labels"><span>LEFT AISLE</span><span>CENTRE</span><span>RIGHT AISLE</span></div>
             <SeatStateLegend />
-            {message && <div className="selection-message" role="alert"><span>!</span>{message}<button type="button" onClick={() => setMessage("")}><Icon name="x" size={14} /></button></div>}
+            {(message || mapError) && <div className="selection-message" role="alert"><span>!</span>{message || mapError}<button type="button" onClick={() => { setMessage(""); setMapError(""); }}><Icon name="x" size={14} /></button></div>}
             <div className="live-availability"><i /><span>Availability updates live from the cinema service. Unavailable seats cannot be selected.</span></div>
           </section>
           <PriceSummary seats={selectedSeats} show={show} action={continueToHold} loading={loading} />
@@ -842,8 +843,8 @@ function SeatSelectionScreen({
   );
 }
 
-function HoldCountdown({ onExpire }: { onExpire: () => void }) {
-  const [seconds, setSeconds] = useState(300);
+function HoldCountdown({ expiresAt, onExpire }: { expiresAt: string; onExpire: () => void }) {
+  const [seconds, setSeconds] = useState(() => Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)));
   useEffect(() => {
     const timer = window.setInterval(() => {
       setSeconds((current) => {
@@ -856,7 +857,7 @@ function HoldCountdown({ onExpire }: { onExpire: () => void }) {
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [onExpire]);
+  }, [onExpire, expiresAt]);
   const minutes = Math.floor(seconds / 60);
   const remainder = String(seconds % 60).padStart(2, "0");
   return (
@@ -868,7 +869,7 @@ function HoldCountdown({ onExpire }: { onExpire: () => void }) {
   );
 }
 
-function CheckoutScreen({ navigate, seats, show }: { navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection }) {
+function CheckoutScreen({ navigate, seats, show, hold, onExpire }: { navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection; hold: { id: string; expiresAt: string }; onExpire: () => void }) {
   return (
     <div className="customer-app checkout-canvas">
       <CustomerHeader page="details" navigate={navigate} />
@@ -881,7 +882,7 @@ function CheckoutScreen({ navigate, seats, show }: { navigate: (page: CustomerPa
             <span className="eyebrow">SEATS HELD TEMPORARILY</span>
             <h1>Your seats are reserved for now</h1>
             <p>The cinema service has returned a temporary hold. Complete the demonstration payment before the server-provided expiry time.</p>
-            <HoldCountdown onExpire={() => navigate("expired")} />
+            <HoldCountdown expiresAt={hold.expiresAt} onExpire={onExpire} />
             <div className="server-notice">
               <span>i</span>
               <p><strong>The backend is authoritative.</strong> This countdown represents the hold expiry returned by the server. The timer alone does not guarantee that the reservation remains valid.</p>
@@ -910,7 +911,7 @@ function PriceSummaryStatic({ seats, show, paymentLabel = "Total due" }: { seats
   );
 }
 
-function PaymentScreen({ navigate, seats, show }: { navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection }) {
+function PaymentScreen({ navigate, seats, show, onPay, paying, error }: { navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection; onPay: (outcome: "SUCCESS" | "FAILURE") => void; paying: boolean; error: string }) {
   return (
     <div className="customer-app checkout-canvas">
       <CustomerHeader page="details" navigate={navigate} />
@@ -922,13 +923,14 @@ function PaymentScreen({ navigate, seats, show }: { navigate: (page: CustomerPag
             <Badge tone="violet">Demonstration only</Badge>
             <h1>Choose a test payment outcome</h1>
             <p>No genuine card or payment information is requested. Select one of the two outcomes below to continue the prototype.</p>
+            {error && <div className="auth-alert"><span>!</span><div><strong>Payment was not completed</strong><p>{error}</p></div></div>}
             <div className="payment-outcomes">
-              <button className="payment-outcome success-outcome" type="button" onClick={() => navigate("success")}>
+              <button className="payment-outcome success-outcome" disabled={paying} type="button" onClick={() => onPay("SUCCESS")}>
                 <span><Icon name="check" size={20} /></span>
                 <div><strong>Payment Success</strong><small>Confirm the booking and issue a reference.</small></div>
                 <Icon name="chevron-right" size={17} />
               </button>
-              <button className="payment-outcome failure-outcome" type="button" onClick={() => navigate("failure")}>
+              <button className="payment-outcome failure-outcome" disabled={paying} type="button" onClick={() => onPay("FAILURE")}>
                 <span><Icon name="x" size={20} /></span>
                 <div><strong>Payment Failure</strong><small>Keep the server-confirmed hold until expiry.</small></div>
                 <Icon name="chevron-right" size={17} />
@@ -943,11 +945,11 @@ function PaymentScreen({ navigate, seats, show }: { navigate: (page: CustomerPag
   );
 }
 
-function ConfirmationDetails({ seats, show }: { seats: string[]; show: ShowSelection }) {
+function ConfirmationDetails({ seats, show, booking }: { seats: string[]; show: ShowSelection; booking: ApiBooking | null }) {
   return (
     <div className="confirmation-details">
-      <div><span>Booking reference</span><strong>#YZ-2048</strong></div>
-      <div><span>Movie</span><strong>The Last Horizon</strong></div>
+      <div><span>Booking reference</span><strong>#{booking?.id.slice(0, 8).toUpperCase()}</strong></div>
+      <div><span>Movie</span><strong>{show.movieTitle}</strong></div>
       <div><span>Show date</span><strong>{show.date}</strong></div>
       <div><span>Showtime</span><strong>{show.time} · Screen 1</strong></div>
       <div><span>Seats</span><strong>{seats.join(", ")}</strong></div>
@@ -962,11 +964,13 @@ function PaymentResultPanel({
   navigate,
   seats,
   show,
+  booking,
 }: {
   result: "success" | "failure" | "expired";
   navigate: (page: CustomerPage) => void;
   seats: string[];
   show: ShowSelection;
+  booking: ApiBooking | null;
 }) {
   const success = result === "success";
   const expired = result === "expired";
@@ -976,7 +980,7 @@ function PaymentResultPanel({
       <span className="eyebrow">{success ? "BOOKING CONFIRMED" : expired ? "HOLD EXPIRED" : "PAYMENT NOT COMPLETED"}</span>
       <h1>{success ? "You’re all set for movie night" : expired ? "Your temporary hold has expired" : "Payment failed"}</h1>
       <p>{success ? "Your booking was confirmed by the demonstration service. Keep the reference below for your records." : expired ? "The payment attempt cannot be confirmed because the server-provided hold is no longer valid. Your seats may now be available to others." : "No booking was confirmed. Your temporary hold remains valid only until its server-provided expiry and only if the backend still confirms it."}</p>
-      {success && <ConfirmationDetails seats={seats} show={show} />}
+      {success && <ConfirmationDetails seats={seats} show={show} booking={booking} />}
       {!success && !expired && <div className="failure-hold-note"><Icon name="clock" size={17} /><span><strong>Temporary hold may still be active</strong>Return to payment before expiry. The backend remains authoritative.</span></div>}
       <div className="result-actions">
         {success ? (
@@ -992,11 +996,11 @@ function PaymentResultPanel({
   );
 }
 
-function ResultScreen({ result, navigate, seats, show }: { result: "success" | "failure" | "expired"; navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection }) {
+function ResultScreen({ result, navigate, seats, show, booking }: { result: "success" | "failure" | "expired"; navigate: (page: CustomerPage) => void; seats: string[]; show: ShowSelection; booking: ApiBooking | null }) {
   return (
     <div className="customer-app checkout-canvas">
       <CustomerHeader page="details" navigate={navigate} />
-      <main className="result-main"><PaymentResultPanel result={result} navigate={navigate} seats={seats} show={show} /></main>
+      <main className="result-main"><PaymentResultPanel result={result} navigate={navigate} seats={seats} show={show} booking={booking} /></main>
     </div>
   );
 }
@@ -1004,12 +1008,22 @@ function ResultScreen({ result, navigate, seats, show }: { result: "success" | "
 type BookingStatus = "Confirmed" | "Completed" | "Cancelled";
 type BookingFilter = "All" | "Upcoming" | "Past" | "Cancelled";
 
-const initialBookings = [
-  { id: "YZ-2048", title: "The Last Horizon", date: "Sat, May 24", time: "6:30 PM", seats: ["C4", "C5"], total: 500, status: "Confirmed" as BookingStatus, period: "Upcoming", image: movieImages.horizon, eligible: true },
-  { id: "YZ-2040", title: "Ember Valley", date: "Sat, May 24", time: "3:45 PM", seats: ["F7"], total: 220, status: "Confirmed" as BookingStatus, period: "Upcoming", image: movieImages.ember, eligible: false },
-  { id: "YZ-1982", title: "A Quiet Distance", date: "Sun, May 11", time: "7:00 PM", seats: ["B4", "B5"], total: 500, status: "Completed" as BookingStatus, period: "Past", image: movieImages.silence, eligible: false },
-  { id: "YZ-1954", title: "Wild Meridian", date: "Fri, May 2", time: "9:15 PM", seats: ["D8"], total: 300, status: "Cancelled" as BookingStatus, period: "Cancelled", image: movieImages.wild, eligible: false },
-];
+const initialBookings: Array<{ id: string; bookingId: string; title: string; date: string; time: string; seats: string[]; total: number; status: BookingStatus; period: string; image: string; eligible: boolean }> = [];
+function toBookingCard(booking: ApiBooking) {
+  const startsAt = new Date(booking.show.startsAt);
+  const past = startsAt.getTime() < Date.now();
+  const status: BookingStatus = booking.status === "CANCELLED" ? "Cancelled" : past ? "Completed" : "Confirmed";
+  return {
+    id: booking.id.slice(0, 8).toUpperCase(), bookingId: booking.id, title: booking.show.movie.title,
+    date: dateLabel(booking.show.startsAt, { weekday: "short", month: "short", day: "numeric" }),
+    time: dateLabel(booking.show.startsAt, { hour: "numeric", minute: "2-digit" }),
+    seats: booking.seats.map(({ showSeat }) => `${showSeat.rowLabel}${showSeat.seatNumber}`),
+    total: booking.totalAmountPaise / 100, status,
+    period: status === "Cancelled" ? "Cancelled" : past ? "Past" : "Upcoming",
+    image: booking.show.movie.posterUrl || movieArt[booking.show.movie.title] || "",
+    eligible: booking.status === "CONFIRMED" && startsAt.getTime() - Date.now() > 2 * 60 * 60 * 1000,
+  };
+}
 
 function BookingDetailsModal({
   booking,
@@ -1047,23 +1061,33 @@ function BookingDetailsModal({
 function MyBookingsScreen({ navigate }: { navigate: (page: CustomerPage) => void }) {
   const [filter, setFilter] = useState<BookingFilter>("All");
   const [bookings, setBookings] = useState(initialBookings);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [detail, setDetail] = useState<typeof initialBookings[number] | null>(null);
   const [cancelTarget, setCancelTarget] = useState<typeof initialBookings[number] | null>(null);
   const [notice, setNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
-  const [emptyPreview, setEmptyPreview] = useState(false);
+  const loadBookings = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get<{ items: ApiBooking[] }>("/bookings/me?limit=100");
+      setBookings(response.items.map(toBookingCard));
+      setLoadError("");
+    } catch (error) { setLoadError(errorMessage(error)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void loadBookings(); }, []);
   const periodOrder: Record<string, number> = { Upcoming: 0, Past: 1, Cancelled: 2 };
-  const visible = emptyPreview ? [] : bookings
+  const visible = bookings
     .filter((booking) => filter === "All" || booking.period === filter || (filter === "Cancelled" && booking.status === "Cancelled"))
     .sort((a, b) => periodOrder[a.period] - periodOrder[b.period]);
 
-  const confirmCancellation = (reject = false) => {
+  const confirmCancellation = async () => {
     if (!cancelTarget) return;
-    if (reject) {
-      setNotice({ tone: "error", text: "Cancellation was not permitted by the cinema service. The show may be too close to its start time." });
-    } else {
-      setBookings((current) => current.map((booking) => booking.id === cancelTarget.id ? { ...booking, status: "Cancelled" as BookingStatus, period: "Cancelled", eligible: false } : booking));
+    try {
+      await api.post(`/bookings/${cancelTarget.bookingId}/cancel`);
       setNotice({ tone: "success", text: `Booking #${cancelTarget.id} was cancelled successfully.` });
-    }
+      await loadBookings();
+    } catch (error) { setNotice({ tone: "error", text: errorMessage(error) }); }
     setCancelTarget(null);
     setDetail(null);
   };
@@ -1073,12 +1097,12 @@ function MyBookingsScreen({ navigate }: { navigate: (page: CustomerPage) => void
       <CustomerHeader page="bookings" navigate={navigate} />
       <main className="customer-main bookings-main">
         <div className="bookings-heading"><div><span className="eyebrow">YOUR TICKETS</span><h1>My bookings</h1><p>Upcoming bookings appear first, followed by your cinema history.</p></div><Button onClick={() => navigate("home")}>Browse Movies</Button></div>
-        <div className="demo-banner"><span>PROTOTYPE STATES</span>Cancellation rules are ultimately enforced by the backend.<div><button type="button" onClick={() => setEmptyPreview(!emptyPreview)}>{emptyPreview ? "Restore bookings" : "Preview empty"}</button><button type="button" onClick={() => setNotice({ tone: "error", text: "Cancellation was rejected because the show starts within two hours." })}>Preview rejection</button></div></div>
+        {loadError && <div className="booking-notice notice-error"><Icon name="x" size={16} /><span>{loadError}</span><button type="button" onClick={() => void loadBookings()}>Retry</button></div>}
         {notice && <div className={`booking-notice notice-${notice.tone}`}><Icon name={notice.tone === "success" ? "check" : "x"} size={16} /><span>{notice.text}</span><button type="button" onClick={() => setNotice(null)}><Icon name="x" size={14} /></button></div>}
         <div className="booking-tabs">
-          {(["All", "Upcoming", "Past", "Cancelled"] as BookingFilter[]).map((item) => <button className={filter === item ? "active" : ""} onClick={() => { setFilter(item); setEmptyPreview(false); }} type="button" key={item}>{item}<span>{bookings.filter((booking) => item === "All" || booking.period === item || (item === "Cancelled" && booking.status === "Cancelled")).length}</span></button>)}
+          {(["All", "Upcoming", "Past", "Cancelled"] as BookingFilter[]).map((item) => <button className={filter === item ? "active" : ""} onClick={() => setFilter(item)} type="button" key={item}>{item}<span>{bookings.filter((booking) => item === "All" || booking.period === item || (item === "Cancelled" && booking.status === "Cancelled")).length}</span></button>)}
         </div>
-        {visible.length ? <div className="booking-list">{visible.map((booking) => (
+        {loading ? <ListingFeedback state="loading" retry={() => void loadBookings()} /> : visible.length ? <div className="booking-list">{visible.map((booking) => (
           <article className="booking-card" key={booking.id}>
             <img src={booking.image} alt={`${booking.title} poster thumbnail`} />
             <div className="booking-primary"><Badge tone={booking.status === "Confirmed" ? "green" : booking.status === "Cancelled" ? "red" : "gray"}>{booking.status}</Badge><h2>{booking.title}</h2><span>#{booking.id}</span></div>
@@ -1090,7 +1114,7 @@ function MyBookingsScreen({ navigate }: { navigate: (page: CustomerPage) => void
         ))}</div> : <div className="listing-empty bookings-empty"><span><Icon name="ticket" /></span><h2>No bookings here yet</h2><p>When you book a show, your tickets and booking details will appear here.</p><Button onClick={() => navigate("home")}>Browse Movies</Button></div>}
       </main>
       {detail && <BookingDetailsModal booking={detail} close={() => setDetail(null)} cancel={() => { setCancelTarget(detail); setDetail(null); }} />}
-      {cancelTarget && <div className="modal-backdrop" role="presentation" onMouseDown={() => setCancelTarget(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="modal-icon"><Icon name="ticket" /></div><h2>Cancel booking #{cancelTarget.id}?</h2><p>The seats {cancelTarget.seats.join(", ")} will be released. The cinema service will verify that the show has not passed and is more than two hours away.</p><div className="modal-actions"><Button variant="outline" onClick={() => setCancelTarget(null)}>Keep booking</Button><button className="prototype-reject" type="button" onClick={() => confirmCancellation(true)}>Preview rejection</button><Button variant="danger" onClick={() => confirmCancellation()}>Cancel booking</Button></div></div></div>}
+      {cancelTarget && <div className="modal-backdrop" role="presentation" onMouseDown={() => setCancelTarget(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="modal-icon"><Icon name="ticket" /></div><h2>Cancel booking #{cancelTarget.id}?</h2><p>The seats {cancelTarget.seats.join(", ")} will be released if the cinema cancellation rules allow it.</p><div className="modal-actions"><Button variant="outline" onClick={() => setCancelTarget(null)}>Keep booking</Button><Button variant="danger" onClick={() => void confirmCancellation()}>Cancel booking</Button></div></div></div>}
     </div>
   );
 }
@@ -1129,11 +1153,11 @@ function AdminLayout({ page, navigate, children, title }: { page: AdminPage; nav
           <span className="nav-section-label">MANAGEMENT</span>
           {navItems.map(([itemPage, icon, label]) => <button className={`sidebar-link ${page === itemPage || (itemPage === "admin-shows" && page === "admin-show-detail") ? "active" : ""}`} type="button" onClick={() => navigate(itemPage)} key={itemPage}><Icon name={icon} /><span>{label}</span></button>)}
         </nav>
-        <button className="admin-logout" type="button" onClick={() => navigate("login")}><Icon name="arrow-left" size={17} />Logout</button>
-        <div className="sidebar-user"><div className="avatar">RP</div><div><strong>Rina Patel</strong><span>Cinema manager</span></div><Icon name="more" /></div>
+        <button className="admin-logout" type="button" onClick={async () => { try { await api.post<void>("/auth/logout"); } finally { setSession(null); authChanged(); navigate("login"); } }}><Icon name="arrow-left" size={17} />Logout</button>
+        <div className="sidebar-user"><div className="avatar">{signedInUser?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AD"}</div><div><strong>{signedInUser?.name || "Staff"}</strong><span>{signedInUser?.role === "ADMIN" ? "Cinema admin" : "Customer"}</span></div><Icon name="more" /></div>
       </aside>
       <div className="admin-main">
-        <header className="admin-header"><div><span className="admin-context">STAFF MANAGEMENT</span><strong>{title}</strong></div><div className="admin-header-actions"><span className="operation-status"><i /> Screen open</span><button className="notification-button" type="button" aria-label="Open staff booking alerts" onClick={() => navigate("admin-bookings")}><Icon name="bell" /><i /></button><span className="header-divider" /><div className="avatar">RP</div></div></header>
+        <header className="admin-header"><div><span className="admin-context">STAFF MANAGEMENT</span><strong>{title}</strong></div><div className="admin-header-actions"><span className="operation-status"><i /> Screen open</span><button className="notification-button" type="button" aria-label="Open staff booking alerts" onClick={() => navigate("admin-bookings")}><Icon name="bell" /><i /></button><span className="header-divider" /><div className="avatar">{signedInUser?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AD"}</div></div></header>
         <main className="admin-content">{children}</main>
       </div>
     </div>
@@ -1316,31 +1340,165 @@ function UnauthorizedScreen({ navigate }: { navigate: (page: CustomerPage) => vo
   );
 }
 
+type AdminShow = ApiShow & { movie: ApiMovie };
+type AdminBooking = ApiBooking & { user: { name: string } };
+
+function ConnectedAdminPanel({ page, navigate }: { page: AdminPage; navigate: (page: CustomerPage) => void }) {
+  const [movies, setMovies] = useState<ApiMovie[]>([]);
+  const [shows, setShows] = useState<AdminShow[]>([]);
+  const [bookings, setBookings] = useState<Array<{ booking: AdminBooking; show: AdminShow }>>([]);
+  const [seats, setSeats] = useState<ApiSeat[]>([]);
+  const [summary, setSummary] = useState({ bookedSeats: 0, revenuePaise: 0, confirmedBookings: 0 });
+  const [selectedShowId, setSelectedShowId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [movieEditor, setMovieEditor] = useState<ApiMovie | "new" | null>(null);
+  const [showEditor, setShowEditor] = useState<AdminShow | "new" | null>(null);
+  const [query, setQuery] = useState("");
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const [movieResult, showResult] = await Promise.all([
+        api.get<{ items: ApiMovie[] }>("/admin/movies?limit=100"),
+        api.get<{ items: AdminShow[] }>("/admin/shows?limit=100"),
+      ]);
+      setMovies(movieResult.items); setShows(showResult.items);
+      const targetShowId = selectedShowId || showResult.items[0]?.id || "";
+      if (targetShowId && page === "admin-seats") {
+        const [seatResult, summaryResult] = await Promise.all([
+          api.get<{ seats: ApiSeat[] }>(`/shows/${targetShowId}/seats`),
+          api.get<typeof summary>(`/admin/shows/${targetShowId}/summary`),
+        ]);
+        setSeats(seatResult.seats); setSummary(summaryResult); setSelectedShowId(targetShowId);
+      }
+      if (page === "admin-dashboard" && showResult.items.length) {
+        const summaries = await Promise.all(showResult.items.map((show) => api.get<typeof summary>(`/admin/shows/${show.id}/summary`)));
+        setSummary(summaries.reduce((all, item) => ({ bookedSeats: all.bookedSeats + item.bookedSeats, revenuePaise: all.revenuePaise + item.revenuePaise, confirmedBookings: all.confirmedBookings + item.confirmedBookings }), { bookedSeats: 0, revenuePaise: 0, confirmedBookings: 0 }));
+      }
+      if (page === "admin-bookings" || page === "admin-show-detail") {
+        const bookingResults = await Promise.all(showResult.items.map(async (show) => {
+          const result = await api.get<{ items: AdminBooking[] }>(`/admin/shows/${show.id}/bookings?limit=100`);
+          return result.items.map((booking) => ({ booking, show }));
+        }));
+        const allBookings = bookingResults.flat().sort((a, b) => b.booking.createdAt.localeCompare(a.booking.createdAt));
+        setBookings(page === "admin-show-detail" && targetShowId ? allBookings.filter((item) => item.show.id === targetShowId) : allBookings);
+      }
+    } catch (cause) { setError(errorMessage(cause)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, [page, selectedShowId]);
+
+  const saveMovie = async (form: { title: string; language: string; durationMinutes: number; rating: "U" | "UA" | "A"; posterUrl: string | null; description: string | null }) => {
+    try {
+      if (movieEditor === "new") await api.post("/admin/movies", form);
+      else if (movieEditor) await api.patch(`/admin/movies/${movieEditor.id}`, form);
+      setMovieEditor(null); setNotice("Movie saved to the cinema database."); await load();
+    } catch (cause) { setError(errorMessage(cause)); }
+  };
+  const saveShow = async (form: { movieId: string; startsAt: string; durationMinutes: number; ticketPricePaise: number }) => {
+    try {
+      if (showEditor === "new") await api.post("/admin/shows", form);
+      else if (showEditor) await api.patch(`/admin/shows/${showEditor.id}`, form);
+      setShowEditor(null); setNotice("Show schedule saved to the cinema database."); await load();
+    } catch (cause) { setError(errorMessage(cause)); }
+  };
+
+  const title = page === "admin-movies" ? "Movies" : page === "admin-shows" ? "Shows" : page === "admin-bookings" ? "Bookings" : page === "admin-seats" ? "Seat inventory" : page === "admin-show-detail" ? "Show bookings" : "Dashboard";
+  return <AdminLayout page={page} navigate={navigate} title={title}>
+    <AdminPageHeading title={title === "Dashboard" ? `Welcome, ${signedInUser?.name || "Admin"}` : title} description="Live catalogue, schedules and booking records from PostgreSQL." action={<div className="heading-actions">{page === "admin-movies" && <Button onClick={() => setMovieEditor("new")}>Add Movie</Button>}{page === "admin-shows" && <Button onClick={() => setShowEditor("new")}>Add Show</Button>}</div>} />
+    {notice && <div className="admin-success"><Icon name="check" size={15} />{notice}<button type="button" onClick={() => setNotice("")}><Icon name="x" size={14} /></button></div>}
+    {error && <div className="form-server-error"><Icon name="x" size={15} />{error}<Button variant="outline" onClick={() => void load()}>Retry</Button></div>}
+    {loading ? <div className="listing-empty"><h2>Loading live cinema data…</h2></div> : page === "admin-dashboard" ? <>
+      <div className="admin-metrics">
+        <AdminMetric label="Movies" value={String(movies.length)} helper="Database catalogue" icon="film" tone="violet" />
+        <AdminMetric label="Upcoming shows" value={String(shows.filter((show) => new Date(show.startsAt) > new Date()).length)} helper="From the cinema schedule" icon="calendar" tone="blue" />
+        <AdminMetric label="Booked seats" value={String(summary.bookedSeats)} helper="Across scheduled shows" icon="seat" tone="green" />
+        <AdminMetric label="Confirmed bookings" value={String(summary.confirmedBookings)} helper="Successful payments" icon="ticket" tone="amber" />
+        <AdminMetric label="Money collected" value={inr(summary.revenuePaise)} helper="Confirmed bookings" icon="ticket" tone="violet" />
+      </div><section className="admin-card"><AdminPageHeading title="Upcoming shows" description="Current schedule from PostgreSQL." />{renderShowsTable(shows, (id) => { setSelectedShowId(id); navigate("admin-show-detail"); }, (show) => setShowEditor(show))}</section>
+    </> : page === "admin-movies" ? <section className="admin-card"><div className="management-toolbar"><label><Icon name="search" size={16} /><input placeholder="Search movie title" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div>{renderMoviesTable(movies.filter((movie) => movie.title.toLowerCase().includes(query.toLowerCase())), (movie) => setMovieEditor(movie), async (movie) => { if (window.confirm(`Delete ${movie.title}?`)) { try { await api.delete(`/admin/movies/${movie.id}`); setNotice("Movie deleted."); await load(); } catch (cause) { setError(errorMessage(cause)); } } })}</section>
+    : page === "admin-shows" ? <section className="admin-card">{renderShowsTable(shows, (id) => { setSelectedShowId(id); navigate("admin-show-detail"); }, (show) => setShowEditor(show), async (show) => { if (window.confirm(`Delete the show for ${show.movie.title}?`)) { try { await api.delete(`/admin/shows/${show.id}`); setNotice("Show deleted."); await load(); } catch (cause) { setError(errorMessage(cause)); } } })}</section>
+    : page === "admin-bookings" || page === "admin-show-detail" ? <section className="admin-card">{bookings.length ? <div className="connected-admin-list">{bookings.map(({ booking: item }) => <article key={item.id}><div><strong>{item.show.movie.title}</strong><small>{item.user.name} · #{item.id.slice(0, 8).toUpperCase()}</small></div><span>{dateLabel(item.show.startsAt, { dateStyle: "medium", timeStyle: "short" })}</span><span>{item.seats.map(({ showSeat }) => `${showSeat.rowLabel}${showSeat.seatNumber}`).join(", ")}</span><strong>{inr(item.totalAmountPaise)} · {item.status}</strong></article>)}</div> : <AdminState icon="ticket" title="No bookings yet" text="Completed customer bookings will appear here." action={<Button onClick={() => navigate("admin-shows")}>View shows</Button>} />}</section>
+    : <section className="admin-card"><div className="inventory-selector"><div><span>Selected show</span><select value={selectedShowId || shows[0]?.id || ""} onChange={(event) => setSelectedShowId(event.target.value)}>{shows.map((show) => <option value={show.id} key={show.id}>{show.movie.title} · {dateLabel(show.startsAt, { dateStyle: "medium", timeStyle: "short" })}</option>)}</select></div></div><div className="admin-seat-inventory"><div className="screen-direction"><span>SCREEN THIS WAY</span><i /></div><div className="seat-grid-shell">{[..."ABCDEFGH"].map((row) => <div className="cinema-seat-row" key={row}><strong>{row}</strong>{Array.from({ length: 10 }, (_, index) => { const seat = seats.find((item) => item.rowLabel === row && item.seatNumber === index + 1); const status: SeatStatus = seat?.status === "BOOKED" ? "booked" : seat?.status.startsWith("HELD") ? "held-other" : "available"; return <SeatButton key={index} id={`${row}${index + 1}`} number={index + 1} status={status} />; })}</div>)}</div><div className="inventory-legend"><span>Booked {summary.bookedSeats}</span><span>Available {seats.filter((seat) => seat.status === "AVAILABLE").length}</span></div></div></section>}
+    {movieEditor && <ConnectedMovieForm movie={movieEditor === "new" ? undefined : movieEditor} close={() => setMovieEditor(null)} save={saveMovie} />}
+    {showEditor && <ConnectedShowForm show={showEditor === "new" ? undefined : showEditor} movies={movies} close={() => setShowEditor(null)} save={saveShow} />}
+  </AdminLayout>;
+}
+
+function renderMoviesTable(movies: ApiMovie[], edit: (movie: ApiMovie) => void, remove: (movie: ApiMovie) => void) {
+  return <div className="admin-table-wrap"><table className="management-table movie-management-table"><thead><tr><th>Movie</th><th>Language</th><th>Duration</th><th>Rating</th><th>Actions</th></tr></thead><tbody>{movies.map((movie) => <tr key={movie.id}><td><strong>{movie.title}</strong></td><td>{movie.language}</td><td>{movie.durationMinutes} min</td><td>{movie.rating}</td><td><span className="row-actions"><button type="button" onClick={() => edit(movie)}>Edit</button><button type="button" className="danger-link" onClick={() => remove(movie)}>Delete</button></span></td></tr>)}</tbody></table></div>;
+}
+function renderShowsTable(shows: AdminShow[], view: (id: string) => void, edit: (show: AdminShow) => void, remove?: (show: AdminShow) => void) {
+  return <div className="admin-table-wrap"><table className="management-table"><thead><tr><th>Movie</th><th>Date & time</th><th>Price</th><th>Available</th><th>Actions</th></tr></thead><tbody>{shows.map((show) => <tr key={show.id}><td><strong>{show.movie.title}</strong></td><td>{dateLabel(show.startsAt, { dateStyle: "medium", timeStyle: "short" })}</td><td>{inr(show.ticketPricePaise)}</td><td>{show.remainingSeats} / {show.totalSeats}</td><td><span className="row-actions"><button type="button" onClick={() => view(show.id)}>Bookings</button><button type="button" onClick={() => edit(show)}>Edit</button>{remove && <button type="button" className="danger-link" onClick={() => remove(show)}>Delete</button>}</span></td></tr>)}</tbody></table></div>;
+}
+
+function ConnectedMovieForm({ movie, close, save }: { movie?: ApiMovie; close: () => void; save: (form: { title: string; language: string; durationMinutes: number; rating: "U" | "UA" | "A"; posterUrl: string | null; description: string | null }) => void }) {
+  const [title, setTitle] = useState(movie?.title || ""); const [language, setLanguage] = useState(movie?.language || ""); const [duration, setDuration] = useState(String(movie?.durationMinutes || 120)); const [rating, setRating] = useState<ApiMovie["rating"]>(movie?.rating || "UA"); const [poster, setPoster] = useState(movie?.posterUrl || ""); const [description, setDescription] = useState(movie?.description || "");
+  return <div className="modal-backdrop"><div className="management-modal wide-modal"><div className="management-modal-header"><div><span className="eyebrow">{movie ? "EDIT MOVIE" : "NEW MOVIE"}</span><h2>{movie ? movie.title : "Add a movie"}</h2></div><button type="button" onClick={close}><Icon name="x" /></button></div><div className="management-form-grid"><AdminField label="Title" value={title} onChange={setTitle} /><AdminField label="Language" value={language} onChange={setLanguage} /><AdminField label="Duration (minutes)" value={duration} onChange={setDuration} type="number" /><label className="admin-form-field"><span>Rating</span><select value={rating} onChange={(event) => setRating(event.target.value as ApiMovie["rating"])}><option>U</option><option>UA</option><option>A</option></select></label><AdminField label="Poster URL" value={poster} onChange={setPoster} /><AdminField label="Description" value={description} onChange={setDescription} /></div><div className="management-modal-actions"><Button variant="outline" onClick={close}>Cancel</Button><Button disabled={!title.trim() || !language.trim()} onClick={() => save({ title: title.trim(), language: language.trim(), durationMinutes: Number(duration), rating, posterUrl: poster.trim() || null, description: description.trim() || null })}>Save movie</Button></div></div></div>;
+}
+function ConnectedShowForm({ show, movies, close, save }: { show?: AdminShow; movies: ApiMovie[]; close: () => void; save: (form: { movieId: string; startsAt: string; durationMinutes: number; ticketPricePaise: number }) => void }) {
+  const [movieId, setMovieId] = useState(show?.movieId || movies[0]?.id || ""); const [startsAt, setStartsAt] = useState(show ? new Date(new Date(show.startsAt).getTime() - new Date(show.startsAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""); const [price, setPrice] = useState(String(show ? show.ticketPricePaise / 100 : 250));
+  const selectedMovie = movies.find((movie) => movie.id === movieId);
+  return <div className="modal-backdrop"><div className="management-modal"><div className="management-modal-header"><div><span className="eyebrow">{show ? "EDIT SHOW" : "NEW SHOW"}</span><h2>Schedule a show</h2></div><button type="button" onClick={close}><Icon name="x" /></button></div><div className="management-form-grid"><label className="admin-form-field span-full"><span>Movie</span><select value={movieId} onChange={(event) => setMovieId(event.target.value)}>{movies.map((movie) => <option value={movie.id} key={movie.id}>{movie.title}</option>)}</select></label><AdminField label="Show date and time" type="datetime-local" value={startsAt} onChange={setStartsAt} /><AdminField label="Ticket price (₹)" type="number" value={price} onChange={setPrice} /></div><div className="management-modal-actions"><Button variant="outline" onClick={close}>Cancel</Button><Button disabled={!movieId || !startsAt || Number(price) <= 0} onClick={() => save({ movieId, startsAt: new Date(startsAt).toISOString(), durationMinutes: selectedMovie?.durationMinutes || 120, ticketPricePaise: Math.round(Number(price) * 100) })}>Save show</Button></div></div></div>;
+}
+
 export default function App() {
   const [page, setPage] = useState<CustomerPage>("signup");
-  const [selectedSeats, setSelectedSeats] = useState<string[]>(["C4", "C5", "C6", "C7", "D4", "D5"]);
-  const [selectedShow, setSelectedShow] = useState<ShowSelection>({ date: "Sat, 24 May", time: "6:30 PM", price: 250, seats: 42 });
-  const [selectedMovie, setSelectedMovie] = useState<typeof demoMovies[number]>(demoMovies[0]);
-  const [watchlist, setWatchlist] = useState<number[]>([]);
-  const toggleWatchlist = () => setWatchlist((items) => items.includes(selectedMovie.id) ? items.filter((id) => id !== selectedMovie.id) : [...items, selectedMovie.id]);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
+  const [selectedShow, setSelectedShow] = useState<ShowSelection | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<MovieView | null>(null);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [hold, setHold] = useState<{ id: string; expiresAt: string } | null>(null);
+  const [booking, setBooking] = useState<ApiBooking | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  useEffect(() => {
+    void (async () => {
+      try {
+        await getCsrf();
+        const user = await api.get<ApiUser>("/auth/me");
+        setSession(user);
+        setPage(user.role === "ADMIN" ? "admin-dashboard" : "home");
+      } catch {
+        setSession(null);
+      } finally {
+        authChanged();
+        setAuthLoading(false);
+      }
+    })();
+  }, []);
+  const toggleWatchlist = () => { if (!selectedMovie) return; setWatchlist((items) => items.includes(selectedMovie.id) ? items.filter((id) => id !== selectedMovie.id) : [...items, selectedMovie.id]); };
   const navigate = (nextPage: CustomerPage) => {
     setPage(nextPage);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const completePayment = async (outcome: "SUCCESS" | "FAILURE") => {
+    if (!hold) { setPaymentError("Your seat hold is missing. Return to seat selection and try again."); return; }
+    setPaying(true);
+    setPaymentError("");
+    try {
+      const result = await api.post<{ outcome: string; booking: ApiBooking | null }>(`/holds/${hold.id}/payment`, { outcome });
+      setBooking(result.booking);
+      navigate(outcome === "SUCCESS" && result.booking ? "success" : "failure");
+    } catch (error) { setPaymentError(errorMessage(error)); }
+    finally { setPaying(false); }
+  };
+
+  if (authLoading) return <div className="listing-empty"><h2>Connecting to Yozigo…</h2></div>;
+
   if (page === "signup" || page === "login") return <AuthScreen mode={page} navigate={navigate} />;
-  if (page === "details") return <DetailsScreen navigate={navigate} selectShow={setSelectedShow} movie={selectedMovie} saved={watchlist.includes(selectedMovie.id)} toggleSaved={toggleWatchlist} />;
-  if (page === "seats") return <SeatSelectionScreen navigate={navigate} selectedSeats={selectedSeats} setSelectedSeats={setSelectedSeats} show={selectedShow} />;
-  if (page === "checkout") return <CheckoutScreen navigate={navigate} seats={selectedSeats} show={selectedShow} />;
-  if (page === "payment") return <PaymentScreen navigate={navigate} seats={selectedSeats} show={selectedShow} />;
-  if (page === "success" || page === "failure" || page === "expired") return <ResultScreen result={page} navigate={navigate} seats={selectedSeats} show={selectedShow} />;
+  if (page.startsWith("admin-") && signedInUser?.role !== "ADMIN") return <UnauthorizedScreen navigate={navigate} />;
+  if (page === "details" && selectedMovie) return <DetailsScreen navigate={navigate} selectMovie={setSelectedMovie} selectShow={setSelectedShow} movie={selectedMovie} saved={watchlist.includes(selectedMovie.id)} toggleSaved={toggleWatchlist} />;
+  if (page === "seats" && selectedShow) return <SeatSelectionScreen navigate={navigate} selectedSeats={selectedSeats} setSelectedSeats={setSelectedSeats} show={selectedShow} onHoldCreated={(value) => setHold(value)} />;
+  if (page === "checkout" && selectedShow && hold) return <CheckoutScreen navigate={navigate} seats={selectedSeats} show={selectedShow} hold={hold} onExpire={() => { void api.delete(`/holds/${hold.id}`).catch(() => undefined); setHold(null); navigate("expired"); }} />;
+  if (page === "payment" && selectedShow) return <PaymentScreen navigate={navigate} seats={selectedSeats} show={selectedShow} onPay={(outcome) => void completePayment(outcome)} paying={paying} error={paymentError} />;
+  if ((page === "success" || page === "failure" || page === "expired") && selectedShow) return <ResultScreen result={page} navigate={navigate} seats={selectedSeats} show={selectedShow} booking={booking} />;
   if (page === "bookings") return <MyBookingsScreen navigate={navigate} />;
-  if (page === "admin-dashboard") return <AdminDashboard navigate={navigate} />;
-  if (page === "admin-movies") return <MovieManagement navigate={navigate} />;
-  if (page === "admin-shows") return <ShowManagement navigate={navigate} />;
-  if (page === "admin-bookings") return <AdminBookings navigate={navigate} />;
-  if (page === "admin-seats") return <SeatInventoryScreen navigate={navigate} />;
-  if (page === "admin-show-detail") return <ShowBookingDetails navigate={navigate} />;
+  if (page.startsWith("admin-")) return <ConnectedAdminPanel page={page as AdminPage} navigate={navigate} />;
   if (page === "handoff") return <HandoffScreen navigate={navigate} />;
   if (page === "unauthorized") return <UnauthorizedScreen navigate={navigate} />;
   return <HomeScreen navigate={navigate} selectMovie={setSelectedMovie} />;

@@ -41,6 +41,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
       FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+      FRONTEND_ORIGINS: ${YOZIGO_FRONTEND_ORIGINS:-http://localhost:5173,http://localhost:8443}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -63,6 +64,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
       FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+      FRONTEND_ORIGINS: ${YOZIGO_FRONTEND_ORIGINS:-http://localhost:5173,http://localhost:8443}
       YOZIGO_CINEMA_SERVICE: "1"
     depends_on:
       migrate:
@@ -86,6 +88,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-local-development-only-change-to-a-random-secret-32-chars}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-yozigo-service-token-change-this-value}
       FRONTEND_ORIGIN: ${YOZIGO_COMPOSE_ORIGIN:-http://localhost:5173}
+      FRONTEND_ORIGINS: ${YOZIGO_FRONTEND_ORIGINS:-http://localhost:5173,http://localhost:8443}
       IDENTITY_SERVICE_URL: http://identity:4101
       CINEMA_SERVICE_URL: http://cinema:4102
     ports: ["127.0.0.1:${YOZIGO_API_PORT:-4000}:4000"]

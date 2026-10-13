@@ -2554,12 +2554,13 @@ td strong {
 .detail-hero {
   background: var(--navy-900);
   color: var(--white);
-  min-height: 410px;
+  min-height: 460px;
   overflow: hidden;
   position: relative;
 }
 
 .detail-backdrop {
+  animation: detail-backdrop-in 800ms ease both;
   filter: saturate(0.85);
   height: 100%;
   inset: 0;
@@ -2576,12 +2577,13 @@ td strong {
 
 .detail-content {
   align-items: center;
+  animation: detail-slide-in 500ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
   display: flex;
   gap: 38px;
   margin: 0 auto;
   max-width: 1216px;
-  min-height: 410px;
-  padding: 36px 0;
+  min-height: 460px;
+  padding: 36px 0 82px;
   position: relative;
 }
 
@@ -2635,6 +2637,98 @@ td strong {
   display: flex;
   font-size: 9px;
   gap: 7px;
+}
+
+.detail-carousel-controls {
+  align-items: center;
+  backdrop-filter: blur(14px);
+  background: rgba(11, 17, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  bottom: 18px;
+  display: flex;
+  gap: 10px;
+  padding: 7px 10px;
+  position: absolute;
+  right: max(24px, calc((100% - 1216px) / 2));
+  z-index: 2;
+}
+
+.detail-carousel-arrow,
+.detail-carousel-toggle {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  color: var(--white);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  transition: background 160ms ease, border-color 160ms ease;
+  width: 32px;
+}
+
+.detail-carousel-arrow:hover,
+.detail-carousel-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.detail-carousel-arrow:focus-visible,
+.detail-carousel-toggle:focus-visible,
+.detail-carousel-dots button:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 3px;
+}
+
+.detail-carousel-count {
+  color: var(--white);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.detail-carousel-dots {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  max-width: min(160px, 24vw);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.detail-carousel-dots::-webkit-scrollbar {
+  display: none;
+}
+
+.detail-carousel-dots button {
+  background: rgba(255, 255, 255, 0.45);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  flex: none;
+  height: 7px;
+  padding: 0;
+  transition: background 160ms ease, width 160ms ease;
+  width: 7px;
+}
+
+.detail-carousel-dots button[aria-current="true"] {
+  background: var(--white);
+  width: 20px;
+}
+
+@keyframes detail-slide-in {
+  from { opacity: 0.35; transform: translateX(22px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes detail-backdrop-in {
+  from { opacity: 0.4; transform: scale(1.035); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .showtime-section {
@@ -3037,7 +3131,20 @@ td strong {
     align-items: flex-start;
     flex-direction: column;
     margin: 0;
-    padding: 28px 20px;
+    padding: 28px 20px 82px;
+  }
+
+  .detail-carousel-controls {
+    bottom: 14px;
+    gap: 7px;
+    left: 50%;
+    max-width: calc(100% - 32px);
+    right: auto;
+    transform: translateX(-50%);
+  }
+
+  .detail-carousel-dots {
+    max-width: min(110px, 26vw);
   }
 
   .detail-poster {

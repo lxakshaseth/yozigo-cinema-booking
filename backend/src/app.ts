@@ -5,7 +5,7 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
-import { config } from './config.js';
+import { config, corsOrigin } from './config.js';
 import { db, sessionPool } from './db.js';
 import { csrf, loadUser } from './middleware/auth.js';
 import { errorHandler } from './middleware/errors.js';
@@ -18,7 +18,7 @@ export function createApp() {
   app.disable('x-powered-by');
   if (config.NODE_ENV === 'production') app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+  app.use(cors({ origin: corsOrigin, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
   app.use(express.json({ limit: '16kb' }));
   app.use(rateLimit({ windowMs: 60000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Too many requests' } } }));
   const Store = connectPgSimple(session);

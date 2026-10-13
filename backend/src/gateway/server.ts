@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config } from '../config.js';
+import { config, corsOrigin } from '../config.js';
 import { openapi } from '../openapi.js';
 
 type User = { id: string; name: string; email: string; role: 'CUSTOMER' | 'ADMIN' };
@@ -95,7 +95,7 @@ export function createGatewayApp() {
   app.disable('x-powered-by');
   if (config.NODE_ENV === 'production') app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: config.FRONTEND_ORIGIN, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+  app.use(cors({ origin: corsOrigin, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
   app.use(express.json({ limit: '16kb' }));
   app.use(rateLimit({ windowMs: 60000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Too many requests' } } }));
   app.get('/api/health', async (_req, res) => {
@@ -120,7 +120,7 @@ export function createGatewayApp() {
       if (!authRoute) session = await sessionFor(req);
       if (!authRoute && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         const origin = req.get('origin');
-        if (origin && origin !== config.FRONTEND_ORIGIN) return error(res, 403, 'CSRF_REJECTED', 'Origin is not allowed');
+        if (origin && !config.FRONTEND_ORIGINS.includes(origin)) return error(res, 403, 'CSRF_REJECTED', 'Origin is not allowed');
         const supplied = req.get('x-csrf-token') ?? '';
         const expected = session?.csrfToken ?? '';
         if (!expected || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) {

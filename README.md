@@ -1,6 +1,6 @@
 # Yozigo Cinemas
 
-Full-stack single-screen cinema booking application. The connected React, TypeScript and Vite customer/admin UI is in `backend/web/`; the separate `Frontend/` directory is a UI prototype. The backend runs as three services behind one browser-facing API gateway. In development, Vite proxies `/api` to that gateway so cookie sessions and CSRF protection work on the same origin.
+Full-stack single-screen cinema booking application. `Frontend/` is the Yozigo prototype, now connected to the backend API for authentication, catalogue, scheduling, seat holds, simulated payments, bookings and admin management. `backend/web/` is the separate connected UI. The backend runs as three services behind one browser-facing API gateway.
 
 The backend paths and commands in this README are relative to `backend/`.
 
@@ -116,6 +116,10 @@ This alternative trusts local connections, binds only loopback, and is for devel
 `.env` is ignored. Use a separate database role/secret and a secure deployment secret store in production. Production requires an HTTPS frontend origin and rejects the example session secret. Set TLS at a trusted reverse proxy; `trust proxy = 1` assumes exactly one proxy, with the API inaccessible directly. Cookies use HTTP-only, SameSite=Lax, 24-hour expiry and Secure in production. Keep frontend and API on the same site (for example subdomains of one domain); unrelated domains are incompatible with this Lax-cookie contract. CORS allows only the configured frontend origin. Every mutation requires a session-bound CSRF token; requests with a mismatched Origin are rejected even with a token. Auth endpoints are rate limited to 30 requests/15 minutes; all endpoints to 300/minute/IP. These limits are per process, suitable for the single-instance assignment deployment.
 
 ## Frontend connection
+
+The `Frontend/` prototype runs on port `8443` and proxies `/api` to the gateway on port `4000`. Start the backend services and seed data from `backend/`, then open the existing Figma/Vite preview or run `npm --prefix Frontend run dev` from the repository root. Use a backend account; prototype-only accounts and sample bookings have been removed. Demo movies and future shows are seeded into PostgreSQL and can be managed from the staff portal with an ADMIN account.
+
+The connected `backend/web/` app continues to run at port `5173` through Docker Compose.
 
 1. Fetch `GET /api/auth/csrf` using `credentials: 'include'`; save `csrfToken`.
 2. Register and login with JSON, `credentials: 'include'`, and `X-CSRF-Token`. Registration creates a CUSTOMER and does not sign in automatically. The login response contains a **new** token; replace the old token.
