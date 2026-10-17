@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, dateTime, getCsrf, messageOf, money, seatLabel, type Booking, type Hold, type Movie, type Seat, type Show, type User } from "./api";
 import "./connected.css";
+import "./responsive.css";
 
 type Route = { path: string; parts: string[] };
 const readRoute = (): Route => ({ path: window.location.pathname, parts: window.location.pathname.split("/").filter(Boolean) });

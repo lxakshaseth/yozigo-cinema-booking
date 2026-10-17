@@ -5,7 +5,14 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); }
 }
 export const fail = (status: number, code: string, message: string, details?: unknown): never => { throw new ApiError(status, code, message, details); };
-export const errorHandler: ErrorRequestHandler = (err: unknown, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err: unknown, _req, res, next) => {
+  // Some middleware (notably the session store) can surface an error while a
+  // response is being finalized. At that point it is too late to serialize a
+  // second JSON error response; let Express finish handling the original error.
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
   if (err instanceof ZodError) { res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid request', details: err.issues } }); return; }
   if (err instanceof Prisma.PrismaClientKnownRequestError || err instanceof Prisma.PrismaClientUnknownRequestError) {
     if (err.message.includes('23P01') || err.message.includes('Show_no_overlap')) err = new ApiError(409, 'SCHEDULE_CONFLICT', 'This show overlaps an existing show');

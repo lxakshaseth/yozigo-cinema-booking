@@ -17,6 +17,7 @@ const cinemaUrl = (process.env.CINEMA_SERVICE_URL || 'http://127.0.0.1:4102').re
 const blockedHeaders = new Set(['connection', 'content-encoding', 'content-length', 'host', 'keep-alive', 'transfer-encoding', 'upgrade', 'accept-encoding']);
 
 function error(res: express.Response, status: number, code: string, message: string) {
+  if (res.headersSent || res.writableEnded) return;
   res.status(status).json({ error: { code, message } });
 }
 

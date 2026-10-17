@@ -1,0 +1,106 @@
+/* Small-screen refinements for the API-connected application. */
+.connected-app .public-header nav,
+.connected-filters,
+.connected-seat-card,
+.connected-confirm {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .connected-app .public-header {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .connected-app .brand-name small {
+    display: none;
+  }
+
+  .connected-app .public-header nav {
+    flex: 0 0 100%;
+    gap: 18px;
+    margin: 0;
+    max-width: 100%;
+    order: 3;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 2px 0 4px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .connected-app .public-header nav button {
+    flex: 0 0 auto;
+    font-size: 13px;
+  }
+
+  .connected-user {
+    margin-left: auto;
+  }
+
+  .connected-user .button {
+    min-height: 36px;
+    padding: 0 10px;
+  }
+
+  .connected-footer {
+    font-size: 11px;
+    padding: 18px 14px;
+  }
+
+  .connected-confirm p {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  .connected-main {
+    width: calc(100% - 24px);
+  }
+
+  .connected-auth {
+    padding: 28px 14px;
+  }
+
+  .connected-card {
+    padding: 22px 16px;
+  }
+
+  .connected-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .connected-filters input {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .connected-filters select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .connected-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .connected-detail-poster {
+    height: 190px;
+  }
+}
+
+@media (max-width: 360px) {
+  .connected-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .connected-app .public-header nav {
+    gap: 14px;
+  }
+}

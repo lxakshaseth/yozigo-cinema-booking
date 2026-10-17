@@ -300,6 +300,7 @@ const movieImages = {
 
 function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (page: CustomerPage) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [user, setUser] = useState<DemoSession | null>(signedInUser);
   useEffect(() => {
     const update = () => setUser(signedInUser);
@@ -313,11 +314,12 @@ function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (pag
         <button className={page === "home" || page === "details" ? "active" : ""} onClick={() => navigate("home")} type="button">Movies</button>
         <button className={page === "bookings" ? "active" : ""} onClick={() => navigate("bookings")} type="button">My Bookings</button>
       </nav>
+      <button className="customer-mobile-menu" type="button" aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"} aria-controls="customer-mobile-navigation" aria-expanded={mobileNavOpen} onClick={() => { setMobileNavOpen((open) => !open); setMenuOpen(false); }}><Icon name={mobileNavOpen ? "x" : "menu"} size={20} /></button>
       <div className="public-actions">
         <button className="header-search" type="button" onClick={() => navigate("home")}><Icon name="search" size={16} /><span>Search</span><kbd>⌘ K</kbd></button>
         <button className="notification-button" type="button" aria-label="Open booking updates" onClick={() => navigate("bookings")}><Icon name="bell" /></button>
         <div className="profile-menu">
-          <button className={`profile-menu-trigger ${menuOpen ? "open" : ""}`} type="button" aria-expanded={menuOpen} aria-haspopup="menu" onClick={() => setMenuOpen(!menuOpen)}>
+          <button className={`profile-menu-trigger ${menuOpen ? "open" : ""}`} type="button" aria-expanded={menuOpen} aria-haspopup="menu" onClick={() => { setMenuOpen(!menuOpen); setMobileNavOpen(false); }}>
             <div className="avatar">{user?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?"}</div>
             <span className="public-user">{user?.name || "Guest"}<small>Customer</small></span>
             <Icon name="chevron-down" size={15} />
@@ -325,6 +327,7 @@ function CustomerHeader({ page, navigate }: { page: CustomerPage; navigate: (pag
           {menuOpen && <div className="profile-dropdown" role="menu"><div><strong>{user?.name || "Guest"}</strong><span>{user?.email || "Not signed in"}</span></div><button role="menuitem" type="button" onClick={() => { setMenuOpen(false); navigate("bookings"); }}><Icon name="ticket" size={15} />My Bookings</button><button role="menuitem" type="button" onClick={async () => { try { await api.post<void>("/auth/logout"); } finally { setSession(null); authChanged(); setMenuOpen(false); navigate("login"); } }}><Icon name="arrow-left" size={15} />Sign Out</button></div>}
         </div>
       </div>
+      {mobileNavOpen && <nav className="customer-mobile-nav" id="customer-mobile-navigation" aria-label="Customer navigation"><button className={page === "home" || page === "details" ? "active" : ""} type="button" onClick={() => { navigate("home"); setMobileNavOpen(false); }}>Movies</button><button className={page === "bookings" ? "active" : ""} type="button" onClick={() => { navigate("bookings"); setMobileNavOpen(false); }}>My Bookings</button></nav>}
     </header>
   );
 }
@@ -875,7 +878,7 @@ function CheckoutScreen({ navigate, seats, show, hold, onExpire }: { navigate: (
       <CustomerHeader page="details" navigate={navigate} />
       <main className="checkout-main">
         <button className="back-link" type="button" onClick={() => navigate("seats")}><Icon name="arrow-left" size={16} /> Change seats</button>
-        <div className="checkout-progress"><span className="complete"><i><Icon name="check" size={11} /></i>Select seats</span><b /><span className="active"><i>2</i>Temporary hold</span><b /><span><i>3</i>Payment</span></div>
+        <div className="checkout-progress"><span className="complete"><i><Icon name="check" size={11} /></i><span className="checkout-step-label">Select seats</span></span><b /><span className="active"><i>2</i><span className="checkout-step-label">Temporary hold</span></span><b /><span><i>3</i><span className="checkout-step-label">Payment</span></span></div>
         <div className="checkout-grid">
           <section className="hold-panel">
             <div className="hold-status-icon"><Icon name="check" size={20} /></div>
@@ -917,7 +920,7 @@ function PaymentScreen({ navigate, seats, show, onPay, paying, error }: { naviga
       <CustomerHeader page="details" navigate={navigate} />
       <main className="checkout-main payment-main">
         <button className="back-link" type="button" onClick={() => navigate("checkout")}><Icon name="arrow-left" size={16} /> Back to hold details</button>
-        <div className="checkout-progress"><span className="complete"><i><Icon name="check" size={11} /></i>Select seats</span><b /><span className="complete"><i><Icon name="check" size={11} /></i>Temporary hold</span><b /><span className="active"><i>3</i>Payment</span></div>
+        <div className="checkout-progress"><span className="complete"><i><Icon name="check" size={11} /></i><span className="checkout-step-label">Select seats</span></span><b /><span className="complete"><i><Icon name="check" size={11} /></i><span className="checkout-step-label">Temporary hold</span></span><b /><span className="active"><i>3</i><span className="checkout-step-label">Payment</span></span></div>
         <div className="checkout-grid">
           <section className="fake-payment-panel">
             <Badge tone="violet">Demonstration only</Badge>
@@ -1137,6 +1140,7 @@ const adminShows = [
 ];
 
 function AdminLayout({ page, navigate, children, title }: { page: AdminPage; navigate: (page: CustomerPage) => void; children: ReactNode; title: string }) {
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const navItems: Array<[AdminPage, IconName, string]> = [
     ["admin-dashboard", "dashboard", "Dashboard"],
     ["admin-movies", "film", "Movies"],
@@ -1146,18 +1150,19 @@ function AdminLayout({ page, navigate, children, title }: { page: AdminPage; nav
   ];
   return (
     <div className="app-shell admin-portal">
-      <aside className="admin-sidebar">
-        <div className="sidebar-brand"><Brand /></div>
+      {navigationOpen && <button className="sidebar-overlay" type="button" aria-label="Close staff navigation" onClick={() => setNavigationOpen(false)} />}
+      <aside className={`admin-sidebar ${navigationOpen ? "sidebar-open" : ""}`}>
+        <div className="sidebar-brand"><Brand /><button className="sidebar-close" type="button" aria-label="Close staff navigation" onClick={() => setNavigationOpen(false)}><Icon name="x" size={18} /></button></div>
         <div className="staff-mode"><span>STAFF PORTAL</span><strong>Yozigo Cinema</strong><small>Single-screen operations</small></div>
         <nav aria-label="Staff navigation">
           <span className="nav-section-label">MANAGEMENT</span>
-          {navItems.map(([itemPage, icon, label]) => <button className={`sidebar-link ${page === itemPage || (itemPage === "admin-shows" && page === "admin-show-detail") ? "active" : ""}`} type="button" onClick={() => navigate(itemPage)} key={itemPage}><Icon name={icon} /><span>{label}</span></button>)}
+          {navItems.map(([itemPage, icon, label]) => <button className={`sidebar-link ${page === itemPage || (itemPage === "admin-shows" && page === "admin-show-detail") ? "active" : ""}`} type="button" onClick={() => { navigate(itemPage); setNavigationOpen(false); }} key={itemPage}><Icon name={icon} /><span>{label}</span></button>)}
         </nav>
         <button className="admin-logout" type="button" onClick={async () => { try { await api.post<void>("/auth/logout"); } finally { setSession(null); authChanged(); navigate("login"); } }}><Icon name="arrow-left" size={17} />Logout</button>
         <div className="sidebar-user"><div className="avatar">{signedInUser?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AD"}</div><div><strong>{signedInUser?.name || "Staff"}</strong><span>{signedInUser?.role === "ADMIN" ? "Cinema admin" : "Customer"}</span></div><Icon name="more" /></div>
       </aside>
       <div className="admin-main">
-        <header className="admin-header"><div><span className="admin-context">STAFF MANAGEMENT</span><strong>{title}</strong></div><div className="admin-header-actions"><span className="operation-status"><i /> Screen open</span><button className="notification-button" type="button" aria-label="Open staff booking alerts" onClick={() => navigate("admin-bookings")}><Icon name="bell" /><i /></button><span className="header-divider" /><div className="avatar">{signedInUser?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AD"}</div></div></header>
+        <header className="admin-header"><button className="mobile-menu" type="button" aria-label={navigationOpen ? "Close staff navigation" : "Open staff navigation"} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((open) => !open)}><Icon name={navigationOpen ? "x" : "menu"} /></button><div><span className="admin-context">STAFF MANAGEMENT</span><strong>{title}</strong></div><div className="admin-header-actions"><span className="operation-status"><i /> Screen open</span><button className="notification-button" type="button" aria-label="Open staff booking alerts" onClick={() => navigate("admin-bookings")}><Icon name="bell" /><i /></button><span className="header-divider" /><div className="avatar">{signedInUser?.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AD"}</div></div></header>
         <main className="admin-content">{children}</main>
       </div>
     </div>
