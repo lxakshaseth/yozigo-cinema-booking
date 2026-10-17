@@ -575,9 +575,16 @@ function DetailsScreen({ navigate, selectMovie, selectShow, movie, saved, toggle
   }, [slides, movie.id, carouselPaused, carouselHovered, carouselFocused, selectMovie]);
   useEffect(() => {
     let active = true;
+    let loading = false;
+    let initial = true;
+    setSelectedDate(0);
+    setSelectedTime("");
     setSchedule([]);
     setLoadError("");
-    void api.get<{ items: ApiShow[] }>(`/movies/${movie.id}/shows?limit=100`).then(({ items }) => {
+    const refresh = async () => {
+      if (loading || document.visibilityState === "hidden") return;
+      loading = true;
+      await api.get<{ items: ApiShow[] }>(`/movies/${movie.id}/shows?limit=100`).then(({ items }) => {
       if (!active) return;
       const grouped = new Map<string, Array<{ api: ApiShow; time: string; price: number; seats: number }>>();
       for (const apiShow of items) {
@@ -587,13 +594,22 @@ function DetailsScreen({ navigate, selectMovie, selectShow, movie, saved, toggle
       }
       const days = [...grouped.entries()].map(([detail, shows]) => ({ date: detail.split(",")[0], detail, shows }));
       setSchedule(days);
-      if (days[0]?.shows[0]) {
+      setLoadError("");
+      setSelectedDate((current) => Math.min(current, Math.max(0, days.length - 1)));
+      if (initial && days[0]?.shows[0]) {
         setSelectedDate(0);
         setSelectedTime(days[0].shows[0].api.id);
         selectShow({ id: days[0].shows[0].api.id, movieTitle: movie.title, date: days[0].detail, time: days[0].shows[0].time, startsAt: days[0].shows[0].api.startsAt, price: days[0].shows[0].price, seats: days[0].shows[0].seats, totalSeats: days[0].shows[0].api.totalSeats });
       }
-    }).catch((error) => { if (active) setLoadError(errorMessage(error)); });
-    return () => { active = false; };
+      initial = false;
+    }).catch((error) => { if (active) setLoadError(errorMessage(error)); }).finally(() => { loading = false; });
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 8000);
+    const refreshOnFocus = () => void refresh();
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refreshOnFocus); document.removeEventListener("visibilitychange", refreshOnFocus); };
   }, [movie.id]);
   const chooseShow = (show: { api: ApiShow; time: string; price: number; seats: number }, date = schedule[selectedDate]?.detail || "") => {
     setSelectedTime(show.api.id);
@@ -634,7 +650,7 @@ function DetailsScreen({ navigate, selectMovie, selectShow, movie, saved, toggle
             {schedule.map((day, index) => <button className={selectedDate === index ? "active" : ""} onClick={() => { setSelectedDate(index); if (day.shows[0]) chooseShow(day.shows[0], day.detail); }} type="button" key={day.detail}><span>{day.date}</span><strong>{day.detail}</strong></button>)}
           </div>
           {loadError ? <div className="listing-empty error-listing"><h2>Couldn’t load showtimes</h2><p>{loadError}</p><Button variant="outline" onClick={() => navigate("home")}>Back to movies</Button></div> : !schedule.length ? <div className="listing-empty no-shows-state"><span><Icon name="calendar" /></span><h2>No upcoming shows</h2><p>The cinema has not scheduled another session for this movie yet.</p><Button variant="outline" onClick={() => navigate("home")}>Browse Other Movies</Button></div> : <div className="show-list">
-            <div className="show-date-title"><Icon name="calendar" size={17} /><strong>{schedule[selectedDate]?.date}, {schedule[selectedDate]?.detail}</strong><span>{schedule[selectedDate]?.shows.length} shows</span></div>
+            <div className="show-date-title"><Icon name="calendar" size={17} /><strong>{schedule[selectedDate]?.detail}</strong><span>{schedule[selectedDate]?.shows.length} {schedule[selectedDate]?.shows.length === 1 ? "show" : "shows"}</span></div>
             {schedule[selectedDate]?.shows.map((show) => (
               <article className={`show-row ${selectedTime === show.api.id ? "selected-show-row" : ""}`} key={show.api.id}>
                 <button className={`time-button ${selectedTime === show.api.id ? "selected" : ""}`} type="button" aria-pressed={selectedTime === show.api.id} onClick={() => chooseShow(show)}><Icon name={selectedTime === show.api.id ? "check" : "clock"} size={15} /><span>{show.time}</span></button>
@@ -644,14 +660,14 @@ function DetailsScreen({ navigate, selectMovie, selectShow, movie, saved, toggle
               </article>
             ))}
           </div>}
-          <div className="schedule-note"><Icon name="check" size={14} /> Show availability and ticket prices are loaded from the cinema database.</div>
+          <div className="schedule-note"><Icon name="check" size={14} /> Availability is specific to each show and refreshes every 8 seconds.</div>
         </section>
       </main>
     </div>
   );
 }
 
-type SeatStatus = "available" | "selected" | "held-other" | "held-you" | "booked" | "expired";
+type SeatStatus = "available" | "selected" | "held-other" | "held-you" | "booked" | "expired" | "unavailable";
 
 function BookingFacts({ show }: { show: ShowSelection }) {
   return (
@@ -683,6 +699,7 @@ function SeatButton({
     "held-you": "Held by you",
     booked: "Booked",
     expired: "Expired hold",
+    unavailable: "Unavailable or loading",
   }[status];
 
   return (
@@ -779,8 +796,21 @@ function SeatSelectionScreen({
     return () => window.clearInterval(timer);
   }, [show.id]);
 
+  useEffect(() => {
+    if (!seatMap.length) return;
+    const available = new Set(seatMap.filter((seat) => seat.status === "AVAILABLE").map((seat) => `${seat.rowLabel}${seat.seatNumber}`));
+    const valid = selectedSeats.filter((label) => available.has(label));
+    if (valid.length !== selectedSeats.length) {
+      setSelectedSeats(valid);
+      setMessage("Some selected seats are no longer available. Your selection has been updated.");
+    }
+  }, [seatMap, selectedSeats]);
+  const availableCount = seatMap.filter((seat) => seat.status === "AVAILABLE").length;
+  const selectedCount = selectedSeats.filter((label) => seatMap.some((seat) => `${seat.rowLabel}${seat.seatNumber}` === label && seat.status === "AVAILABLE")).length;
+
   const selectSeat = (label: string) => {
     setMessage("");
+    if (!seatMap.some((seat) => `${seat.rowLabel}${seat.seatNumber}` === label && seat.status === "AVAILABLE")) return;
     if (selectedSeats.includes(label)) {
       setSelectedSeats(selectedSeats.filter((seat) => seat !== label));
       return;
@@ -796,7 +826,7 @@ function SeatSelectionScreen({
     setLoading(true);
     setMessage("");
     try {
-      const ids = selectedSeats.map((label) => seatMap.find((seat) => `${seat.rowLabel}${seat.seatNumber}` === label)?.id);
+      const ids = selectedSeats.map((label) => seatMap.find((seat) => `${seat.rowLabel}${seat.seatNumber}` === label && seat.status === "AVAILABLE")?.id);
       if (ids.some((id) => !id)) throw new Error("Refresh the seat map and select available seats again.");
       const hold = await api.post<{ id: string; expiresAt: string }>(`/shows/${show.id}/holds`, { seatIds: ids });
       onHoldCreated(hold);
@@ -814,11 +844,12 @@ function SeatSelectionScreen({
         <button className="back-link" type="button" onClick={() => navigate("details")}><Icon name="arrow-left" size={16} /> Back to showtimes</button>
         <div className="seat-page-heading">
           <div><span className="eyebrow">{show.movieTitle.toUpperCase()} · SCREEN 1</span><h1>Select your seats</h1><p>{show.date} · {show.time} · {formatINR(show.price)} per ticket</p></div>
-          <Badge tone="green">{seatMap.filter((seat) => seat.status === "AVAILABLE").length} of {show.totalSeats} available</Badge>
+          <Badge tone="green">{availableCount} of {seatMap.length || show.totalSeats} available</Badge>
         </div>
         <div className="seat-booking-layout">
           <section className="full-seat-map">
             <div className="screen-direction"><span>SCREEN THIS WAY</span><i /></div>
+            <p className="seat-availability-count" aria-live="polite">{seatMap.length ? `${availableCount} tickets available: ${availableCount - selectedCount} empty seats + ${selectedCount} selected. ${seatMap.length - availableCount} seats booked or held.` : "Loading seat availability…"}</p>
             <div className="seat-grid-shell">
               <div className="seat-column-numbers"><span />{Array.from({ length: 10 }, (_, index) => <span key={index}>{index + 1}</span>)}</div>
               {rows.map((row) => (
@@ -828,7 +859,7 @@ function SeatSelectionScreen({
                     const number = index + 1;
                     const id = `${row}${number}`;
                     const data = seatMap.find((seat) => seat.rowLabel === row && seat.seatNumber === number);
-                    const status: SeatStatus = selectedSeats.includes(id) ? "selected" : data?.status === "BOOKED" ? "booked" : data?.status === "HELD_BY_OTHER" ? "held-other" : data?.status === "HELD_BY_ME" ? "held-you" : "available";
+                    const status: SeatStatus = data?.status === "AVAILABLE" ? (selectedSeats.includes(id) ? "selected" : "available") : data?.status === "BOOKED" ? "booked" : data?.status === "HELD_BY_OTHER" ? "held-other" : data?.status === "HELD_BY_ME" ? "held-you" : "unavailable";
                     return <SeatButton id={id} key={id} number={number} status={status} onSelect={data?.status === "AVAILABLE" ? () => selectSeat(id) : undefined} />;
                   })}
                 </div>

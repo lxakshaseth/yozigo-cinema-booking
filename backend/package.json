@@ -34,7 +34,8 @@
     "db:seed:services": "tsx scripts/seed-services.ts",
     "test": "vitest run",
     "test:integration": "vitest run",
-    "db:migrate:test": "tsx scripts/migrate-test.ts"
+    "db:migrate:test": "tsx scripts/migrate-test.ts",
+    "db:seed:occupancy": "tsx scripts/seed-occupancy.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.0",
